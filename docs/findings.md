@@ -20,6 +20,7 @@ A running log of what we confirmed against real code and data. Where this file d
 
 ## Environment
 
+- **2026-11-01 (later):** Since the session moved into the repo folder, Claude's sandbox can't reach Solana public RPC either. The user runs `cargo run -p fetch -- ...` and commits the fixtures; Claude works from them.
 - **2026-11-01:** Claude's sandbox can't reach `static.crates.io`. The user runs `cargo fetch`, and Claude builds from the local cache. `raw.githubusercontent.com`, the npm registry and Solana public RPC are reachable.
 
 ## Confirmed facts

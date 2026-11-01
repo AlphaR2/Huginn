@@ -11,3 +11,6 @@ hex.workspace = true
 anyhow.workspace = true
 clap = { version = "4", features = ["derive"] }
 ureq = { version = "2", features = ["json"] }
+alpenglow-lc = { path = "../alpenglow-lc" }
+base64 = "0.22"
+bs58 = "0.5"
