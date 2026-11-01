@@ -98,11 +98,14 @@ version = "0.1.0"
 dependencies = [
  "agave-bls-cert-verify",
  "agave-votor-messages",
+ "anyhow",
  "hex",
+ "rayon",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "solana-bls-signatures",
+ "solana-hash",
  "thiserror",
 ]
 

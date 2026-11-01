@@ -31,6 +31,11 @@ enum Cmd {
         #[arg(long)]
         cluster: Cluster,
     },
+    /// Save the cluster's current shred version (part of every signed vote payload).
+    ClusterInfo {
+        #[arg(long)]
+        cluster: Cluster,
+    },
     /// Build the ranked BLS validator set from current vote accounts.
     ValidatorSet {
         #[arg(long)]
@@ -86,6 +91,10 @@ fn main() -> Result<()> {
             }
             let path = write(&cli.out, cluster, "genesis_cert.json", &json!({ "result": result }))?;
             println!("slot {} -> {}", result["block"]["slot"], path.display());
+        }
+        Cmd::ClusterInfo { cluster } => {
+            let rpc = Rpc(cli.rpc.unwrap_or_else(|| cluster.default_rpc().into()));
+            cluster_info(&rpc, &cli.out, cluster)?;
         }
         Cmd::ValidatorSet { cluster } => {
             let rpc = Rpc(cli.rpc.unwrap_or_else(|| cluster.default_rpc().into()));
@@ -160,6 +169,30 @@ fn validator_set(rpc: &Rpc, out: &PathBuf, cluster: Cluster) -> Result<()> {
         set.total_stake,
         path.display()
     );
+    Ok(())
+}
+
+fn cluster_info(rpc: &Rpc, out: &PathBuf, cluster: Cluster) -> Result<()> {
+    let info = rpc.call("getEpochInfo", json!([{"commitment": "finalized"}]))?;
+    // Nodes report their own shred version. Take the most common one, and keep the full
+    // tally so a split (e.g. mid-restart) is visible in the fixture.
+    let nodes = rpc.call("getClusterNodes", json!([]))?;
+    let mut tally = std::collections::BTreeMap::<u64, u64>::new();
+    for n in nodes.as_array().context("nodes")? {
+        if let Some(v) = n["shredVersion"].as_u64() {
+            *tally.entry(v).or_default() += 1;
+        }
+    }
+    let (&shred_version, _) = tally.iter().max_by_key(|(_, c)| **c).context("no nodes")?;
+    let fixture = json!({
+        "cluster": cluster.name(),
+        "epoch": info["epoch"],
+        "slot": info["absoluteSlot"],
+        "shred_version": shred_version,
+        "shred_version_tally": tally,
+    });
+    let path = write(out, cluster, "cluster_info.json", &fixture)?;
+    println!("shred_version {shred_version} (tally {tally:?}) -> {}", path.display());
     Ok(())
 }
 
