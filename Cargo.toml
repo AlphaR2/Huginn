@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = ["crates/alpenglow-lc", "crates/fetch"]
+
+[workspace.package]
+edition = "2021"
+license = "Apache-2.0"
+version = "0.1.0"
+
+[workspace.dependencies]
+# Pinned exactly. Bump together and log in docs/findings.md.
+agave-bls-cert-verify = "=4.4.0"
+agave-votor-messages = "=4.4.0"
+solana-bls-signatures = "=4.0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+sha2 = "0.10"
+thiserror = "2"
+anyhow = "1"
