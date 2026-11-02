@@ -58,6 +58,22 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
 - Hash-to-curve DST: `BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_`. *(confirmed)*
 - `verify_signature` hashes the raw payload bytes directly. There is no extra pre-hash step.
 
+### Full certificate verification in Rust (item 0.8)
+- **2026-11-02:** `alpenglow_lc::cert::verify` wraps Agave's `verify_certificate` with no thread pool. The real devnet genesis cert passes end to end: bitmap decode, aggregation, signature, and 82% threshold (`tests/devnet_genesis.rs`).
+- That run uses a reconstructed rank map:
+  - The signer positions come from the real bitmap: `[0,1,2,3,4,7,9,10,14,15,16]` of 17.
+  - The keys are the 0.7 signers.
+  - Stakes are today's (97.1% signed), so **the stake check there is a stand-in. The signature check is exact.**
+- The same cert verified against **today's** ranking fails with `VerificationFailed`. Ranks shift between epochs, so the verifier needs the cert's own epoch set.
+- Tamper cases rejected, on both synthetic and real data:
+  - a bitmap bit added or removed,
+  - one signature bit flipped (fails at point decoding, `VerifySig(_)`),
+  - a different slot, shred version or cert type,
+  - genuine signatures holding 81.8% < 82%,
+  - a bitmap longer than the set.
+- **The RPC genesis cert has no `shred_version` field.** It is part of the signed payload, so the verifier must get it from somewhere else. For Huginn this means the posted epoch data must include the shred version (or the relayer passes it and a wrong value just fails).
+- `verify_certificate` only looks up the ranks set in the bitmap, plus `max_validators` for decoding and `total_stake` for the threshold. Non-signers matter only through `total_stake`.
+
 ### Devnet genesis certificate signature: verified (item 0.7)
 - **2026-11-02:** `find_genesis_signers` found the 11 signers among today's 22 ranked devnet keys (epoch 1198). The search covered C(22,11) = 705,432 subsets in about 103s.
 - This confirms against real cluster data:

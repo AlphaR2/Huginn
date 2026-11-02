@@ -11,7 +11,7 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 - [x] 0.5 **You:** unblock Rust crate downloads (run `cargo fetch` in the repo from your own terminal)
 - [x] 0.6 Validator set builder: vote accounts → BLS keys → ranked list (devnet epoch 1198: 22 ranked)
 - [x] 0.7 Check the devnet genesis cert signature on real data (subset search over today's keys; MATCH, 11 of 22, shred_version 7016)
-- [ ] 0.8 Native Rust verification with `agave-bls-cert-verify`, plus a one-bit tamper test
+- [x] 0.8 Native Rust verification with `agave-bls-cert-verify`, plus tamper tests (`alpenglow_lc::cert`; real devnet genesis cert verifies)
 - [ ] 0.9 Decide how to get a current-epoch certificate (gRPC provider vs own devnet node)
 - [ ] 0.10 SP1 execute-mode check → go/no-go written in findings.md
 
