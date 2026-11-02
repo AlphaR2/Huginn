@@ -58,6 +58,29 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
 - Hash-to-curve DST: `BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_`. *(confirmed)*
 - `verify_signature` hashes the raw payload bytes directly. There is no extra pre-hash step.
 
+### Where current certificates live (item 0.9)
+Sources: Agave v4.4.0 `entry/src/block_component.rs`, `runtime/src/block_component_processor.rs`, `runtime/src/validated_block_finalization.rs`, `geyser-plugin-manager/src/entry_notifier.rs`; Yellowstone gRPC `geyser.proto` (master, commit #903 2026-10-06).
+
+- **Every Alpenglow block ends with a block footer**, a block marker inside the block's own shreds. Its fields:
+  - `bank_hash` (a hook for Layer 2),
+  - producer time and user agent,
+  - an optional **`block_final_cert`**,
+  - optional skip and notar reward certs.
+- `block_final_cert` proves that **some earlier block** is finalized: `{slot, block_id, final_aggregate, notar_aggregate?}`. A given footer may carry none.
+  - **Fast finalization:** no `notar_aggregate`. One cert, `FinalizeFast(Block{slot, block_id})`, needs 80%.
+  - **Slow finalization:** two certs, both at 60%: `Notarize(Block{slot, block_id})` from `notar_aggregate` and `Finalize(slot)` from `final_aggregate`. **`Finalize` names only the slot. The Notarize cert is what binds the block_id, so Huginn must verify both.**
+  - Signatures in the footer are **compressed (96 bytes)**, unlike the 192 bytes from the genesis RPC. Agave decompresses them before verifying.
+  - Bitmaps must be base2, and rank against the set of **the epoch of the certified slot** (`epoch_stakes_from_slot(cert slot)`).
+- Validators re-verify the footer cert while replaying the block (`ValidatedBlockFinalizationCert::try_from_footer`). An invalid one makes the whole block invalid.
+- **Geyser:** Agave 4.4 has a `notify_block_footer` plugin hook that passes the full footer, certs included.
+- **Yellowstone gRPC** (the Geyser plugin most providers run) streams it:
+  - subscribe with filter `block_footer: { include_certificates: true }`;
+  - you get `SubscribeUpdateBlockFooter { slot, bank_hash, block_final_cert { slot, final_aggregate, notar_aggregate } }`;
+  - each aggregate holds the signature, `block_id` and the signer-store bitmap verbatim.
+  - Typed cert messages landed 2026-10-06. The latest release is `v16.2.0+solana.4.3.2` (2026-10-30). **A provider must run a recent build with footer certs enabled.** Not yet checked with any provider.
+- Still not exposed: plain RPC (`getBlock`), `agave-ledger-tool`, and the blockstore read API. There are no footer helpers in v4.4.0.
+- **Phase 3 warning:** proving that a transaction is inside a block_id needs the **shreds** (Merkle paths up to the last data shred's root). Yellowstone streams entries and transactions, not shreds. Rebuilding exact shreds from entries is unproven. So inclusion proofs will probably need our own node, or a provider that serves shreds. Decide in Phase 3.
+
 ### Full certificate verification in Rust (item 0.8)
 - **2026-11-02:** `alpenglow_lc::cert::verify` wraps Agave's `verify_certificate` with no thread pool. The real devnet genesis cert passes end to end: bitmap decode, aggregation, signature, and 82% threshold (`tests/devnet_genesis.rs`).
 - That run uses a reconstructed rank map:
@@ -112,7 +135,7 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
 
 ## Open problems
 
-- **Plain RPC exposes only the genesis certificate.** `getBlock` has no footer and no certs, and Agave 4.4's RPC has no other Alpenglow method. Current-epoch certificates need Geyser/gRPC or our own node. This moves the Phase 2 data decision up to item 0.9.
+- **(Partly resolved by 0.9.)** **Plain RPC exposes only the genesis certificate.** `getBlock` has no footer and no certs, and Agave 4.4's RPC has no other Alpenglow method. Current-epoch certificates need Geyser/gRPC or our own node. This moves the Phase 2 data decision up to item 0.9.
 - **We can't rebuild the epoch-1064 mainnet set over RPC.** `getVoteAccounts` returns current stakes only (now epoch 1074). Stake changes reorder the ranks. Plan: verify the devnet genesis cert first (17 validators), and get mainnet coverage from a current-epoch cert once 0.9 is settled.
 
 ## Trust assumptions (stated, not hidden)
