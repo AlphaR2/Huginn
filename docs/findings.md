@@ -58,6 +58,18 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
 - Hash-to-curve DST: `BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_`. *(confirmed)*
 - `verify_signature` hashes the raw payload bytes directly. There is no extra pre-hash step.
 
+### Devnet genesis certificate signature: verified (item 0.7)
+- **2026-11-02:** `find_genesis_signers` found the 11 signers among today's 22 ranked devnet keys (epoch 1198). The search covered C(22,11) = 705,432 subsets in about 103s.
+- This confirms against real cluster data:
+  - the payload encoding (Agave's `get_vote_payload_to_sign`, tag 6, 43 bytes),
+  - the DST,
+  - the 192-byte uncompressed signature parsing,
+  - that signatures aggregate the same way (plain sum).
+- Payload: `0607b40c1e0000000013f09ed28a3f91b07ef7d727d829e41caa2b976b6b71ea6feaae75113de31677681b`.
+- Devnet `shred_version` = **7016** (153 of 153 nodes, `fixtures/devnet/cluster_info.json`). It was the same at genesis, otherwise the signature would not verify.
+- Signers by today's rank: 0, 1, 2, 3, 4, 7, 10, 11, 17, 18, 19. All 11 keys are unchanged since epoch 1167.
+- **Not covered:** the ranking order and stake threshold for a historical epoch. Those wait for a current-epoch cert (0.8/0.9).
+
 ### Thresholds (`CertificateType::threshold`)
 - 60%: Finalize, Skip, Notarize, NotarizeFallback.
 - 80%: FinalizeFast.

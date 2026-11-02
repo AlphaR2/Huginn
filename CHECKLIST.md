@@ -9,8 +9,8 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 - [x] 0.3 Read Agave's verifier source; decoded the certs; recorded what the plan got right and wrong
 - [x] 0.4 Docs: README, PLAN.md (v1 + revision), `docs/findings.md`, research docs (you paste them)
 - [x] 0.5 **You:** unblock Rust crate downloads (run `cargo fetch` in the repo from your own terminal)
-- [ ] 0.6 Validator set builder: vote accounts → BLS keys → ranked list (devnet first, 17 validators)
-- [ ] 0.7 Independent check: verify the devnet genesis cert in JS with `@noble/curves`
+- [x] 0.6 Validator set builder: vote accounts → BLS keys → ranked list (devnet epoch 1198: 22 ranked)
+- [x] 0.7 Check the devnet genesis cert signature on real data (subset search over today's keys; MATCH, 11 of 22, shred_version 7016)
 - [ ] 0.8 Native Rust verification with `agave-bls-cert-verify`, plus a one-bit tamper test
 - [ ] 0.9 Decide how to get a current-epoch certificate (gRPC provider vs own devnet node)
 - [ ] 0.10 SP1 execute-mode check → go/no-go written in findings.md
