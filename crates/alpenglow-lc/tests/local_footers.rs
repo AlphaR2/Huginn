@@ -142,3 +142,14 @@ fn other_key() -> [u8; 48] {
     let s: ValidatorSet = serde_json::from_value(v["validator_set"].clone()).unwrap();
     s.entries[0].bls_pubkey
 }
+
+#[test]
+fn set_commitment_is_stable() {
+    // Pinned: if this changes, every stored commitment on every destination chain is
+    // invalidated, so it must only change together with a new layout version.
+    assert_eq!(
+        hex::encode(set().commitment()),
+        hex::encode(alpenglow_core::proof::validator_set_hash(&set().to_proof_validators()))
+    );
+    assert_eq!(set().to_proof_validators().len(), 1);
+}

@@ -114,7 +114,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn validator_set(rpc: &Rpc, out: &PathBuf, cluster: Cluster) -> Result<()> {
+fn validator_set(rpc: &Rpc, out: &std::path::Path, cluster: Cluster) -> Result<()> {
     // Read the slot first and pin every later call to it with minContextSlot, so a
     // set is never stitched together across an epoch boundary without us noticing.
     let info = rpc.call("getEpochInfo", json!([{"commitment": "finalized"}]))?;
@@ -170,19 +170,22 @@ fn validator_set(rpc: &Rpc, out: &PathBuf, cluster: Cluster) -> Result<()> {
             "with_bls_key": with_key,
             "ranked": set.entries.len(),
         },
+        // What a destination chain stores for this epoch (alpenglow_core::proof::validator_set_hash).
+        "commitment": hex::encode(set.commitment()),
         "validator_set": set,
     });
     let path = write(out, cluster, &format!("validator_set_{epoch}.json"), &fixture)?;
     println!(
-        "epoch {epoch}: {total} vote accounts, {with_key} with BLS key, {} ranked, total stake {} -> {}",
+        "epoch {epoch}: {total} vote accounts, {with_key} with BLS key, {} ranked, total stake {}, commitment {} -> {}",
         set.entries.len(),
         set.total_stake,
+        hex::encode(set.commitment()),
         path.display()
     );
     Ok(())
 }
 
-fn cluster_info(rpc: &Rpc, out: &PathBuf, cluster: Cluster) -> Result<()> {
+fn cluster_info(rpc: &Rpc, out: &std::path::Path, cluster: Cluster) -> Result<()> {
     let info = rpc.call("getEpochInfo", json!([{"commitment": "finalized"}]))?;
     // Nodes report their own shred version. Take the most common one, and keep the full
     // tally so a split (e.g. mid-restart) is visible in the fixture.
@@ -206,7 +209,7 @@ fn cluster_info(rpc: &Rpc, out: &PathBuf, cluster: Cluster) -> Result<()> {
     Ok(())
 }
 
-fn write(root: &PathBuf, cluster: Cluster, file: &str, v: &Value) -> Result<PathBuf> {
+fn write(root: &std::path::Path, cluster: Cluster, file: &str, v: &Value) -> Result<PathBuf> {
     let dir = root.join(cluster.name());
     fs::create_dir_all(&dir)?;
     let path = dir.join(file);

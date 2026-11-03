@@ -1,13 +1,11 @@
-//! Execute mode: runs the program on real and synthetic inputs and reports cycles.
-//! Each run is also checked natively, and the committed output must match.
+//! Execute mode: runs the program on the real local transaction, then with the same
+//! transaction finalized by synthetic validator sets of chosen sizes, and reports cycles.
+//! Every run is also verified natively; the committed public values must match.
 //!
-//!   cargo run --release -- --fixture ../../fixtures/local/block_44000.json --synthetic 100,1000,1500
+//!   cargo run --release -- --synthetic 100,1000,1500 --slow 1000
 
 use {
-    alpenglow_core::{
-        block_proof::{BlockProofInput, BlockProofOutput},
-        fixture,
-    },
+    alpenglow_core::{fixture, proof::TxInput},
     anyhow::{ensure, Context, Result},
     clap::Parser,
     sp1_sdk::{include_elf, prelude::*, Elf, ProverClient, SP1Stdin},
@@ -17,47 +15,52 @@ const ELF: Elf = include_elf!("huginn-program");
 
 #[derive(Parser)]
 struct Cli {
-    /// Block fixture from `ledger-dump`.
-    #[arg(long, default_value = "../../fixtures/local/block_44000.json")]
+    /// Block fixture from `ledger-dump` that contains the transaction.
+    #[arg(long, default_value = "../../fixtures/local/block_46718.json")]
     fixture: String,
-    /// Also run with synthetic sets of these sizes (same block, N validators, ~90% signing).
+    /// RPC copy of the transaction (for its signature).
+    #[arg(long, default_value = "../../fixtures/local/tx_46718.json")]
+    tx: String,
+    /// Synthetic fast-path sets of these sizes (~90% signing).
     #[arg(long, value_delimiter = ',')]
     synthetic: Vec<usize>,
+    /// Synthetic slow-path sets of these sizes.
+    #[arg(long, value_delimiter = ',')]
+    slow: Vec<usize>,
+}
+
+fn read(path: &str) -> Result<serde_json::Value> {
+    Ok(serde_json::from_str(&std::fs::read_to_string(path).with_context(|| format!("read {path}"))?)?)
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     sp1_sdk::utils::setup_logger();
     let cli = Cli::parse();
-    let json = serde_json::from_str(&std::fs::read_to_string(&cli.fixture).context("read fixture")?)?;
-    let real = fixture::from_block_fixture(&json);
+    let sig: [u8; 64] = hex::decode(read(&cli.tx)?["signature"].as_str().context("signature")?)?
+        .try_into()
+        .ok()
+        .context("64-byte signature")?;
+    let real = fixture::tx_input(&read(&cli.fixture)?, sig);
 
-    let mut runs = vec![("real (1 validator)".to_string(), real.clone())];
+    let mut runs = vec![("real, 1 validator, fast".to_string(), real.clone())];
     for &n in &cli.synthetic {
-        runs.push((format!("synthetic {n} validators"), fixture::synthetic(&real, n)));
+        runs.push((format!("{n} validators, fast"), TxInput { finality: fixture::synthetic(&real.finality, n), ..real.clone() }));
+    }
+    for &n in &cli.slow {
+        runs.push((format!("{n} validators, slow"), TxInput { finality: fixture::synthetic_slow(&real.finality, n), ..real.clone() }));
     }
 
     let client = ProverClient::from_env().await;
-    println!("{:<28} {:>9} {:>14} {:>14} {:>12}", "input", "signers", "finality", "inclusion", "total");
+    println!("{:<28} {:>14} {:>14} {:>14}", "input", "finality", "inclusion", "total cycles");
     for (name, input) in runs {
-        let native = input.verify().context("native verify")?;
+        let native = input.verify().context("native verify")?.encode();
         let mut stdin = SP1Stdin::new();
         stdin.write(&input);
-        let (mut public, report) = client.execute(ELF, stdin).await.map_err(|e| anyhow::anyhow!("{e}"))?;
-        let committed: BlockProofOutput = public.read();
-        ensure!(committed == native, "zkVM output differs from native");
+        let (public, report) = client.execute(ELF, stdin).await.map_err(|e| anyhow::anyhow!("{e}"))?;
+        ensure!(public.as_slice() == native.as_slice(), "zkVM public values differ from native");
         let tracked = |k: &str| report.cycle_tracker.get(k).copied().unwrap_or(0);
-        println!(
-            "{name:<28} {:>9} {:>14} {:>14} {:>12}",
-            signer_count(&input),
-            tracked("finality"),
-            tracked("inclusion"),
-            report.total_instruction_count()
-        );
+        println!("{name:<28} {:>14} {:>14} {:>14}", tracked("finality"), tracked("inclusion"), report.total_instruction_count());
     }
     Ok(())
-}
-
-fn signer_count(input: &BlockProofInput) -> u32 {
-    input.final_aggregate.bitmap[3..].iter().map(|b| b.count_ones()).sum()
 }

@@ -6,10 +6,10 @@ license.workspace = true
 version.workspace = true
 
 [dependencies]
-# SP1 accelerates exactly this crate and version (sp1-patches/bls12_381, patch-0.8.0-sp1-6.10.0).
-# `experimental` = hash_to_curve, which takes a digest-0.9 hasher, hence sha2 0.9 below.
+# SP1 accelerates exactly this crate and version: patched to sp1-patches/bls12_381
+# patch-0.8.0-sp1-6.10.0 here (workspace [patch]) and in zk/program. `experimental` =
+# hash_to_curve, which in the patched crate takes a digest-0.10 hasher (sha2 0.10).
 bls12_381 = { version = "=0.8.0", default-features = false, features = ["groups", "pairings", "alloc", "experimental"] }
-sha2-09 = { package = "sha2", version = "0.9", default-features = false }
 sha2.workspace = true
 thiserror.workspace = true
 serde.workspace = true
@@ -23,3 +23,4 @@ fixture = ["dep:serde_json", "dep:hex"]
 [dev-dependencies]
 alpenglow-core = { path = ".", features = ["fixture"] }
 serde_json.workspace = true
+hex.workspace = true

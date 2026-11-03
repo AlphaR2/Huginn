@@ -46,6 +46,20 @@ pub fn is_valid_bls_pubkey(bytes: &[u8; BLS_PUBKEY_LEN]) -> bool {
 }
 
 impl ValidatorSet {
+    /// The set as the proof takes it: keys and stakes in rank order.
+    pub fn to_proof_validators(&self) -> Vec<alpenglow_core::proof::Validator> {
+        self.entries
+            .iter()
+            .map(|e| alpenglow_core::proof::Validator { bls_pubkey: e.bls_pubkey.to_vec(), stake: e.stake })
+            .collect()
+    }
+
+    /// The commitment a destination chain stores for this epoch (item 1.1). See
+    /// `alpenglow_core::proof::validator_set_hash` for the exact bytes hashed.
+    pub fn commitment(&self) -> [u8; 32] {
+        alpenglow_core::proof::validator_set_hash(&self.to_proof_validators())
+    }
+
     /// Builds the ranked list exactly as Agave does:
     /// 1. skip zero stake, missing or invalid BLS key;
     /// 2. drop every entry whose BLS key or node pubkey appears more than once;

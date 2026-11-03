@@ -26,6 +26,7 @@ const CODE_PAYLOAD: usize = 1228;
 const DATA_HEADERS: usize = 88;
 const CODE_HEADERS: usize = 89;
 const LAST_SHRED_IN_SLOT: u8 = 0b1100_0000;
+const DATA_COMPLETE: u8 = 0b0100_0000;
 
 // Domain separation, so a leaf can't be passed off as an inner node (second preimage).
 const LEAF_PREFIX: &[u8] = b"\x00SOLANA_MERKLE_SHREDS_LEAF";
@@ -135,6 +136,21 @@ impl<'a> Shred<'a> {
     pub fn parent_slot(&self) -> Option<u64> {
         let offset = u16_at(self.bytes, 83);
         (self.kind == Kind::Data).then(|| self.slot().checked_sub(offset.into())).flatten()
+    }
+
+    /// Data shreds only: this shred ends a block component (its bytes are complete).
+    pub fn data_complete(&self) -> bool {
+        self.kind == Kind::Data && self.bytes[85] & DATA_COMPLETE == DATA_COMPLETE
+    }
+
+    /// Data shreds only: the component bytes it carries, `[88 .. size)`, where `size`
+    /// (header bytes 86..88) must stay within the data buffer.
+    pub fn data(&self) -> Option<&'a [u8]> {
+        if self.kind != Kind::Data {
+            return None;
+        }
+        let size = u16_at(self.bytes, 86) as usize;
+        (DATA_HEADERS..=self.chained_root_offset()).contains(&size).then(|| &self.bytes[DATA_HEADERS..size])
     }
 
     pub fn last_in_slot(&self) -> bool {

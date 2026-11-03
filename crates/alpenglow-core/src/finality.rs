@@ -121,7 +121,7 @@ pub fn pubkey_from_compressed(bytes: &[u8; 48]) -> Result<G1Affine, Error> {
 
 /// The message point: hash_to_curve(msg) in G2 with SHA-256 XMD and [`DST`].
 pub fn hash_to_g2(msg: &[u8]) -> G2Affine {
-    G2Affine::from(<G2Projective as HashToCurve<ExpandMsgXmd<sha2_09::Sha256>>>::hash_to_curve(msg, DST))
+    G2Affine::from(<G2Projective as HashToCurve<ExpandMsgXmd<sha2::Sha256>>>::hash_to_curve([msg], DST))
 }
 
 /// `e(pk, H(msg)) == e(g1, sig)`, as one multi-Miller loop and one final exponentiation.

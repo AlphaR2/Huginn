@@ -19,3 +19,8 @@ hex = { version = "0.4", features = ["serde"] }
 sha2 = "0.10"
 thiserror = "2"
 anyhow = "1"
+
+# alpenglow-core uses SP1's patched bls12_381 natively too, so native tests and the zkVM
+# compile the same source. Off the zkVM target it is plain Rust (sp1-lib is zkvm-only).
+[patch.crates-io]
+bls12_381 = { git = "https://github.com/sp1-patches/bls12_381", tag = "patch-0.8.0-sp1-6.10.0" }

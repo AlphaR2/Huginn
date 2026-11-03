@@ -1,7 +1,8 @@
 {
   "cluster": "local",
+  "commitment": "b1f25236519c10b064498b6507ed0b87b88ad4df728a0a348e9434769d7d3c11",
   "epoch": 0,
-  "fetched_at_slot": 378,
+  "fetched_at_slot": 47595,
   "source": "getVoteAccounts.activatedStake + vote account data (current epoch only)",
   "stats": {
     "ranked": 1,
