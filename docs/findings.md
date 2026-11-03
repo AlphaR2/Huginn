@@ -62,6 +62,11 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
 ### Local Alpenglow validator: first run (item 2.1, 2026-11-03)
 - Agave v4.4.0 `solana-test-validator --alpenglow --ledger .local-ledger --reset` runs. Shred version **28090**, one validator with about 1M SOL stake. Every slot reaches finalized.
 - `getAgGenesisCert` returns an **all-zero placeholder** (slot 0, zero block_id, signature and bitmap). The cluster started on Alpenglow, so it never migrated and no real genesis cert exists. `fetch genesis-cert` now refuses it.
+- **footer-dump plugin works (2.2):** the validator loads it with `--geyser-plugin-config plugins/footer-dump/config.json`. In the first 371 footers (slots 903..1276):
+  - 370 carry a fast-path cert for slot N−1. The final aggregate has a 96-byte signature and bitmap `00 0100 01` (base2, 1 bit, rank 0).
+  - One (slot 980) has no cert, which Triton's guide also calls normal.
+  - `notar_aggregate` is always null.
+  - 3 slots in the range have no footer, presumably no block was produced.
 - Footers carry certs: `agave-ledger-tool -l .local-ledger slot N -vvv`. **It needs `-vvv`**; `-vv` hides block markers.
   - Across slots 1..293, the footer of slot N always holds the finalization cert for slot **N−1**. Slot 1 has none.
   - All are **fast finalization** (`notar_aggregate validators: 0`, so FinalizeFast). With 100% of stake on one validator, the slow path never occurs locally. Slow-path real data needs the multi-validator cluster (2.6); until then it's covered by synthetic tests.
