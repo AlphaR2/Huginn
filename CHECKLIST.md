@@ -12,7 +12,7 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 - [x] 0.6 Validator set builder: vote accounts → BLS keys → ranked list (devnet epoch 1198: 22 ranked)
 - [x] 0.7 Check the devnet genesis cert signature on real data (subset search over today's keys; MATCH, 11 of 22, shred_version 7016)
 - [x] 0.8 Native Rust verification with `agave-bls-cert-verify`, plus tamper tests (`alpenglow_lc::cert`; real devnet genesis cert verifies)
-- [ ] 0.9 Decide how to get a current-epoch certificate (gRPC provider vs own devnet node)
+- [x] 0.9 Decide how to get a current-epoch certificate → **local Alpenglow validator** (free; gives footers and shreds). A paid gRPC provider only if a live-network demo needs it
 - [ ] 0.10 SP1 execute-mode check → go/no-go written in findings.md
 
 ## Phase 1 — finality API (`alpenglow-lc`)
@@ -20,10 +20,13 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 - [ ] 1.2 `verify_finality`: fast path (80% notarize) and slow path (60% finalize + 60% notarize)
 - [ ] 1.3 Adversarial tests (slow-path trap, shred_version mismatch, wrong epoch, low stake)
 
-## Phase 2 — data fetching (`fetch` CLI)
-- [ ] 2.1 Certificates for slot S (footers / cert pool)
-- [ ] 2.2 Raw shreds + block_id for slot S
-- [ ] 2.3 One command producing a full fixture for any recent devnet slot
+## Phase 2 — data fetching (local Alpenglow validator)
+- [ ] 2.1 **You:** install Agave v4.4.0 and Rust 1.98.1; run `solana-test-validator --alpenglow`; `fetch --cluster local` reads its genesis cert and validator set
+- [ ] 2.2 `footer-dump` Geyser plugin: writes each block footer's raw finalization certs to `fixtures/local/footers/`
+- [ ] 2.3 Verify a local footer cert against the exact same-epoch set (fast path and slow path)
+- [ ] 2.4 Raw shreds + block_id for slot S, read from the local ledger
+- [ ] 2.5 One command producing a full fixture for any recent local slot
+- [ ] 2.6 (Later) Multi-validator local cluster, so bitmaps have more than one bit and ranking is exercised
 
 ## Phase 3 — inclusion
 - [ ] 3.1 Shreds → FEC set Merkle root

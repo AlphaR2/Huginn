@@ -13,9 +13,10 @@ A running log of what we confirmed against real code and data. Where this file d
 | solana-signer-store | 0.1.0 | Transitive. Bitmap encoding |
 | rayon | 1.12.0 | Transitive. Unused at runtime if `thread_pool = None` |
 | wincode | 0.6.3 | Transitive. Vote payload serialization |
-| Solana CLI | 3.1.10 | **Needs upgrade to 4.4.x** (not blocking: we call RPC directly) |
+| Solana CLI | 3.1.10 | **Upgrade to v4.4.0 for 2.1** (`solana-test-validator --alpenglow`) |
 | SP1 (`cargo prove`) | not installed | Needed for 0.10 |
 | Foundry | not installed | Needed for Phase 4 |
+| rustc for Geyser plugin | 1.98.1 | Must match Agave 4.4.0's toolchain (dylib ABI) |
 | Anchor | 1.1.2 | Only needed if we build the optional outbox |
 
 ## Environment
@@ -57,6 +58,26 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
 - Tags: 1 Notar, 2 Finalize, 3 Skip, 4 NotarFallback, 5 SkipFallback, **6 Genesis**. *(PLAN §8.2 is missing tag 6)*
 - Hash-to-curve DST: `BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_`. *(confirmed)*
 - `verify_signature` hashes the raw payload bytes directly. There is no extra pre-hash step.
+
+### Decision: local Alpenglow validator (item 0.9, 2026-11-03)
+- **Chosen:** `solana-test-validator --alpenglow` (Agave v4.4.0, released 2026-10-28, macOS builds available). It activates Alpenglow at genesis and produces real footers with real BLS finalization certs, using the same code as devnet.
+- **Why:**
+  - It's free.
+  - We control the genesis, so ranks and stakes are exact.
+  - The shreds are on local disk, which Phase 3 needs and no gRPC provider streams.
+  - The real-network crypto is already covered by the devnet genesis cert (0.7/0.8).
+- **Rejected for now:**
+  - Triton ($125 prepaid, the only provider confirmed to send certificates).
+  - Helius (its footer stream has no certs yet; helius-labs/yellowstone-grpc #74 is open).
+  - Plain `getBlock` (its footers have no certs).
+  - Revisit only if a live-network demo needs one.
+- **Local facts:**
+  - The test validator derives the BLS key from the authorized voter keypair (`BLSKeypair::derive_from_signer(voter, BLS_KEYPAIR_DERIVE_SEED)`).
+  - There is a single validator, so bitmaps have 1 bit. Ranking needs a multi-validator cluster later (2.6).
+- **Getting raw cert bytes:**
+  - `agave-ledger-tool slot -vv` prints only the signer counts, not the signatures or bitmaps.
+  - So we write a small Geyser plugin on `agave-geyser-plugin-interface =5.0.0` (the version Agave 4.4.0 pins) that implements `notify_block_footer`.
+  - Plugins are Rust dylibs with no stable ABI, so **build them with rustc 1.98.1**, Agave 4.4.0's `rust-toolchain.toml`. Our workspace uses 1.99.1.
 
 ### Where current certificates live (item 0.9)
 Sources: Agave v4.4.0 `entry/src/block_component.rs`, `runtime/src/block_component_processor.rs`, `runtime/src/validated_block_finalization.rs`, `geyser-plugin-manager/src/entry_notifier.rs`; Yellowstone gRPC `geyser.proto` (master, commit #903 2026-10-06).
