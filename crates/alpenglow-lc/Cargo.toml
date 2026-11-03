@@ -11,11 +11,11 @@ agave-votor-messages.workspace = true
 solana-bls-signatures.workspace = true
 solana-hash.workspace = true
 serde.workspace = true
-serde_json.workspace = true
 hex.workspace = true
 sha2.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+serde_json.workspace = true
 rayon = "1"
 anyhow.workspace = true
