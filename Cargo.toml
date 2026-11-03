@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/alpenglow-lc", "crates/fetch"]
+members = ["crates/alpenglow-lc", "crates/fetch", "crates/ledger-dump"]
 
 [workspace.package]
 edition = "2021"

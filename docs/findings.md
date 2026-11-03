@@ -18,6 +18,7 @@ A running log of what we confirmed against real code and data. Where this file d
 | Foundry | not installed | Needed for Phase 4 |
 | rustc for Geyser plugin | 1.98.1 | Must match Agave 4.4.0's toolchain (dylib ABI) |
 | Anchor | 1.1.2 | Only needed if we build the optional outbox |
+| rocksdb (ledger-dump) | =0.24.0 | librocksdb-sys 0.17.3+10.4.2, same as Agave 4.4.0. Features `lz4`, `bindgen-runtime` (finds macOS libclang without env vars) |
 
 ## Environment
 
@@ -87,6 +88,39 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
   - an empty bitmap.
 - Slow path is synthetic only (unit tests in `cert.rs`). These check that 61.8% passes, 49% fails, a notarization for a different block fails, and a slow footer read as fast fails.
 - The local epoch is 432,000 slots, so `validator_set_0.json` stays valid for about 48 hours of validator runtime.
+
+### Block_id from raw shreds (item 2.4, 2026-11-03)
+Sources: Agave v4.4.0 `ledger/src/shred/{merkle.rs,merkle_tree.rs,wire.rs}`, `ledger/src/blockstore.rs` (`get_block_id`, `build_double_merkle_tree`), `ledger/src/blockstore/column.rs`.
+- **Alpenglow block_id = double Merkle root.** Its leaves, in order:
+  - each FEC set's Merkle root;
+  - then `sha256(parent_slot u64 LE | parent_block_id | fec_set_count u32 LE)`.
+
+  A TowerBFT block_id was just the last shred's FEC root; Agave picks the rule per slot (`should_use_double_merkle_block_id`).
+- **FEC set tree:**
+  - Leaves are `sha256("\x00SOLANA_MERKLE_SHREDS_LEAF" | shred[64..proof_offset])`: everything after the signature, including the chained root.
+  - Inner nodes are `sha256("\x01SOLANA_MERKLE_SHREDS_NODE" | left[..20] | right[..20])`. Only 20 bytes of each child are hashed, which matters for the 80-bit note in PLAN §8.
+  - An odd last node pairs with itself. The double tree uses the same `MerkleTree`, so the same rules apply.
+- **Shred layout:**
+  - Data shreds are 1203 bytes (88-byte headers). Coding shreds are 1228 bytes (89-byte headers).
+  - Variant byte 64: high nibble 0x9/0xb = data, 0x6/0x7 = code (the second value of each pair = resigned); low nibble = proof entries.
+  - After the data buffer: chained root (32), proof (20 × n), then the optional retransmitter signature.
+  - 32 data shreds per FEC set, so `fec_set_count = last_index / 32 + 1`.
+- **Chaining:** FEC set *i* chains to set *i−1*'s root. Set 0 chains to the **parent's last FEC set root**, not the parent's block_id. Checked: slot 44000 set 0 = slot 43999's last FEC root.
+- **The parent leaf binds the parent.** `(parent_slot, parent_block_id)` come from the block header marker inside the block. Since that leaf is hashed into the block_id, a certified block_id also certifies its parent's block_id. That is the basis for walking back (PLAN §8.7).
+- **Reading the ledger:**
+  - `ledger-dump` opens `<ledger>/rocksdb` **read-only** with only the `data_shred` and `code_shred` column families. It works while the validator runs.
+  - Keys are `slot BE u64 | index BE u64`; values are the raw shred bytes.
+  - The test validator prunes old slots: this ledger held 39166..44016.
+- **Result:**
+  - Slots 43800..44010 (211 blocks): the rebuilt block_id equals the footer-certified one for every slot.
+  - Every coding shred agrees with its set's root.
+  - A typical local block is 96 data + 96 coding shreds in 3 FEC sets, even with almost no transactions.
+- Fixture `fixtures/local/block_44000.json` (228 KB) holds the 96 data shreds (coding shreds aren't needed) plus the certs for 44000 and its parent. `tests/local_block.rs` checks finality and block_id end to end; each of these fails:
+  - one changed byte;
+  - a missing, duplicate or truncated shred set;
+  - a wrong parent slot or parent id;
+  - a dropped FEC root.
+- Not checked: the leader's Ed25519 signature on each FEC root. It isn't needed, because the BLS certificate already commits to the block_id.
 
 ### Decision: local Alpenglow validator (item 0.9, 2026-11-03)
 - **Chosen:** `solana-test-validator --alpenglow` (Agave v4.4.0, released 2026-10-28, macOS builds available). It activates Alpenglow at genesis and produces real footers with real BLS finalization certs, using the same code as devnet.

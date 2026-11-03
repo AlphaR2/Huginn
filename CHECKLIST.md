@@ -24,13 +24,13 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 - [x] 2.1 Local Alpenglow validator running (Agave v4.4.0, Rust 1.98.1 installed); `fetch --cluster local` wrote `fixtures/local/` (shred 28090, 1 ranked validator)
 - [x] 2.2 `footer-dump` Geyser plugin (`plugins/footer-dump`, Rust 1.98.1) writes each footer's raw certs to `fixtures/local/footers.jsonl`
 - [x] 2.3 Verify a local footer cert against the exact same-epoch set: `cert::verify_footer`; all 40,999 captured certs pass, slow path synthetic
-- [ ] 2.4 Raw shreds + block_id for slot S, read from the local ledger
+- [x] 2.4 Raw shreds + block_id for slot S, read from the local ledger: `ledger-dump --slot S` (RocksDB read-only) → `fixtures/local/block_44000.json`; rebuilt block_id = certified block_id for 211/211 slots
 - [ ] 2.5 One command producing a full fixture for any recent local slot
 - [ ] 2.6 (Later) Multi-validator local cluster, so bitmaps have more than one bit and ranking is exercised
 
 ## Phase 3 — inclusion
-- [ ] 3.1 Shreds → FEC set Merkle root
-- [ ] 3.2 FEC roots → double Merkle root = block_id
+- [x] 3.1 Shreds → FEC set Merkle root (`alpenglow_lc::shred`, done with 2.4)
+- [x] 3.2 FEC roots → double Merkle root = block_id (done with 2.4)
 - [ ] 3.3 Rebuild entries, find tx, generic parse (legacy + v0): signers, instructions
 - [ ] 3.4 Tamper tests on shreds, siblings, tx bytes
 
