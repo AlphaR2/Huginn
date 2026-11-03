@@ -1,6 +1,6 @@
 [package]
-name = "huginn-script"
-description = "Runs the Huginn SP1 program in execute mode (cycle counts) or proves it."
+name = "huginn-prover"
+description = "Proves that a Solana transaction is in a finalized Alpenglow block (SP1). Library for relayers, plus the `huginn` CLI."
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -8,13 +8,22 @@ publish = false
 # Own workspace: sp1-sdk is large, and the main workspace shouldn't build it.
 [workspace]
 
+[lib]
+name = "huginn_prover"
+
+[[bin]]
+name = "huginn"
+path = "src/main.rs"
+
 [dependencies]
 # `profiling` makes the cycle-tracker markers in the program show up in the report.
 sp1-sdk = { version = "=6.10.0", features = ["profiling"] }
 tokio = { version = "1", features = ["full"] }
 alpenglow-core = { path = "../../crates/alpenglow-core", features = ["fixture"] }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hex = "0.4"
+bs58 = "0.5"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 
@@ -22,6 +31,7 @@ anyhow = "1"
 sp1-build = "=6.10.0"
 
 # Same curve code as the program and the main workspace (alpenglow-core builds here too,
-# for the native cross-check of every run).
+# for the native cross-check of every run). Crates that depend on huginn-prover need this
+# patch too.
 [patch.crates-io]
 bls12_381 = { git = "https://github.com/sp1-patches/bls12_381", tag = "patch-0.8.0-sp1-6.10.0" }

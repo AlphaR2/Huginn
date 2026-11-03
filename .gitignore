@@ -5,6 +5,6 @@ target/
 # Raw footer stream from the footer-dump plugin. Grows forever; commit samples only.
 fixtures/local/footers.jsonl
 zk/program/target/
-zk/script/target/
+zk/prover/target/
 zk/program/Cargo.lock
 fixtures/proofs/*.bin

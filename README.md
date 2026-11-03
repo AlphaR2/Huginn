@@ -9,7 +9,7 @@ Huginn lets a contract on another chain check, by itself, that a Solana transact
 
 Both run inside an SP1 zkVM program, which outputs one Groth16 proof with chain-neutral public values. Any chain that can verify a BN254 Groth16 proof can use it.
 
-**First target: Base.** The same Solidity contracts work on other EVM chains (Ethereum, Arbitrum, Optimism, ...). Non-EVM destinations need only their own verifier wrapper.
+**First target: Base.** Destinations are separate codebases that depend on the `huginn-prover` crate. The EVM one is [`hugin-evm`](../hugin-evm): Solidity contracts, a relayer, deploy/submit scripts. The same code works on any EVM chain (Ethereum, Arbitrum, Optimism, ...). A non-EVM chain gets its own repo the same way.
 
 > Status: native verifier complete (finality + transaction inclusion, on real local Alpenglow data); SP1 cycle measurement in progress. Nothing here is production-ready. See [`CHECKLIST.md`](CHECKLIST.md).
 
@@ -33,8 +33,7 @@ crates/fetch/           CLI: genesis certs, shred version, validator sets (with 
 crates/ledger-dump/     CLI: one block's shreds from a local ledger -> verified, self-contained fixture
 plugins/footer-dump/    Geyser plugin that captures every block footer's finality certificate
 zk/program/             SP1 program: proves finality + one transaction, commits fixed-layout public values
-zk/script/              runs the program in execute mode (cycle counts) on real and synthetic sets
-contracts/evm/          (later) Foundry: SolanaLightClient, SolanaTx, examples. Base first
+zk/prover/              huginn-prover crate (prove a tx; what relayers depend on) + `huginn` CLI
 fixtures/               real data from mainnet, devnet and the local Alpenglow validator
 docs/                   findings, codebase guide, research
 ```

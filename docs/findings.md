@@ -105,7 +105,7 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
 - `block_proof::BlockProofInput::verify` is the whole check the SP1 program runs (finality, then inclusion). It outputs `{validator_set_hash, shred_version, slot, block_id, signed_stake, total_stake}`. The layout is provisional until 1.1 and 4.1.
 - **The SP1-patched `bls12_381` differs from crates.io 0.8.0:** its hash-to-curve takes a digest-0.10 hasher and a message given as a list of byte slices. So the main workspace `[patch]`es in the SP1 copy too (`Cargo.toml`), and native tests and the zkVM compile identical curve code. `sha2-09` is gone.
 - SP1 toolchain installed: `cargo-prove` v6.10.0 (built 2026-10-23), `succinct` rustc 1.96.0-dev. `zk/program` builds with `cargo prove build`. Its lock resolves `sha2` to the patched 0.10.8; the unused 0.9.9 patch was removed.
-- **`zk/script` needs `protoc`** (`brew install protobuf`): `sp1-prover-types` runs prost-build unconditionally, even with no sdk features. It also needs the same `bls12_381` `[patch]` (it builds alpenglow-core for the native cross-check), and `sp1-sdk` feature `profiling`; without it, cycle-tracker markers are ignored and the breakdown reads 0.
+- **`zk/prover` needs `protoc`** (`brew install protobuf`): `sp1-prover-types` runs prost-build unconditionally, even with no sdk features. It also needs the same `bls12_381` `[patch]` (it builds alpenglow-core for the native cross-check), and `sp1-sdk` feature `profiling`; without it, cycle-tracker markers are ignored and the breakdown reads 0.
 - **Execute-mode results** (SP1 v6.10.0, program = `TxInput`: finality + the real memo transfer's inclusion). In every run the zkVM's public values equal native `encode()` byte for byte.
 
   | Input | Finality | Inclusion | Total cycles |
@@ -126,7 +126,7 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
   - Optimizations held in reserve, not needed yet: commit uncompressed keys (no square root per key); skip per-key subgroup checks for a committed set (the vote program already checked proof of possession); prove the set hash once per epoch instead of per proof.
 
 ### First real proof (item 4.2, part 1, 2026-11-03)
-- `zk/script --prove core|compressed|groth16` proves each run, verifies the proof, checks its public values equal native `encode()`, and writes `fixtures/proofs/<run>.<mode>.json` (program vkey, public values, timings, and for Groth16 the onchain proof bytes). The `.bin` (full proof, bincode) is git-ignored.
+- `zk/prover --prove core|compressed|groth16` proves each run, verifies the proof, checks its public values equal native `encode()`, and writes `fixtures/proofs/<run>.<mode>.json` (program vkey, public values, timings, and for Groth16 the onchain proof bytes). The `.bin` (full proof, bincode) is git-ignored.
 - **Compressed (STARK) proof of the real memo transfer**, CPU prover on an M3 Pro (11 cores, 18 GB):
 
   | | |

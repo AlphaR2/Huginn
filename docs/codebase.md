@@ -33,7 +33,7 @@ Each arrow is code in `crates/alpenglow-core`. The SP1 program in `zk/program` r
 | Kind | Where | Runs where |
 |---|---|---|
 | **The verifier**: what the proof proves | `crates/alpenglow-core` | natively in tests **and** inside SP1 |
-| **Tools and references**: getting data, cross-checking | `crates/alpenglow-lc`, `crates/fetch`, `crates/ledger-dump`, `plugins/footer-dump`, `zk/script` | your machine only |
+| **Tools and references**: getting data, cross-checking | `crates/alpenglow-lc`, `crates/fetch`, `crates/ledger-dump`, `plugins/footer-dump`, `zk/prover` | your machine only |
 
 A rule that runs through the whole repo: **`alpenglow-core` never trusts itself.** Everything it does is cross-checked against Agave's own code (`alpenglow-lc`) or against real chain data (`fixtures/`).
 
@@ -47,7 +47,7 @@ A rule that runs through the whole repo: **`alpenglow-core` never trusts itself.
 4. `crates/alpenglow-core/src/proof.rs`: how the pieces combine into the three statements we prove.
 5. `crates/alpenglow-core/tests/proof.rs`: every attack we refuse, one test each.
 6. `zk/program/src/main.rs`: the 20 lines that run all of the above in SP1.
-7. Then the tools, in data-flow order: `plugins/footer-dump` → `crates/fetch` → `crates/ledger-dump` → `zk/script`.
+7. Then the tools, in data-flow order: `plugins/footer-dump` → `crates/fetch` → `crates/ledger-dump` → `zk/prover`.
 8. `crates/alpenglow-lc`, the Agave-based reference, when you want to see *why* we believe `alpenglow-core` is right.
 
 ---
@@ -223,12 +223,31 @@ If anything fails it panics, and then no proof can exist. The `cycle-tracker` li
 
 `Cargo.toml` patches `bls12_381` and `sha2` to SP1's accelerated versions; the tags come from SP1 v6.10.0's own examples. Build with `cargo prove build`.
 
-### `zk/script`: running it
-`build.rs` compiles the program. `src/main.rs` runs it in **execute mode**, which counts cycles but makes no proof:
-- on the real local transaction;
-- on the same transaction finalized by **synthetic sets** (`--synthetic 100,1000,1500`, `--slow 1000`).
+### `zk/prover`: the library others build on (crate `huginn-prover`)
+`build.rs` compiles the program. **`src/lib.rs`** is what a relayer for any destination chain depends on:
+- `tx_input_from_block_file(block, signature)`: a `ledger-dump` block file plus a signature (base58 or hex) gives the proof input.
+- `Huginn::from_env()`: an SP1 prover. Where it runs follows SP1's env: `SP1_PROVER=cpu` (default) or `mock`.
+- `execute(&input)`: cycles, without a proof.
+- `prove(&input, Mode::Groth16)`: returns `Proven`:
+  - `program_vkey`: what destination contracts pin;
+  - `public_values`: the fixed-layout output;
+  - `onchain_proof`: the bytes a verifier contract takes;
+  - timings.
 
-Each run is also verified natively, and the zkVM's public values must equal native `encode()` exactly. Needs `protoc` (`brew install protobuf`) to build.
+  Every proof is verified, and its output must equal native Rust's, before it's returned.
+- `Proven::summary(...)`: the JSON proof file that destination repos read.
+
+**`src/main.rs`** is the `huginn` CLI on top of it. It runs the real local transaction and synthetic sets (`--synthetic 100,1000,1500`, `--slow 1000`), and with `--prove core|compressed|groth16` writes `fixtures/proofs/<run>.<mode>.json`. Needs `protoc` (`brew install protobuf`); Groth16 also needs Docker and SP1's circuit files in `~/.sp1/circuits/groth16/v6.1.0`.
+
+## 7b. Destinations live in their own repos
+
+huginn knows only Solana. Each destination chain is a **separate codebase** that depends on `huginn-prover` and has its own contracts, settings and scripts. The first one is **`hugin-evm`** (next to this repo):
+- Solidity: `SolanaLightClient`, `HuginnOutput`, `SolanaTx`;
+- a relayer crate using `huginn-prover`;
+- `.env` for the chain, keys and addresses;
+- Foundry deploy and submit scripts.
+
+The proof output's layout (`TxOutput::encode`) is the contract between huginn and every destination. Change it only together with its version byte, and update each destination's decoder.
 
 ---
 
@@ -246,6 +265,7 @@ Each run is also verified natively, and the zkVM's public values must equal nati
 | `local/block_44000.json` | A whole empty block: set, certs, 96 data shreds | `ledger-dump --slot 44000` |
 | `local/block_46718.json` | The block holding our memo transfer: 128 data shreds, 4 FEC sets | `ledger-dump --slot 46718` |
 | `local/tx_46718.json` | RPC's copy of that transaction, the independent reference for the shred parser | `getTransaction` |
+| `proofs/<run>.<mode>.json` | A real proof's summary: program key, public values, timings (the `.bin` proof itself isn't committed) | `zk/prover --prove` |
 
 ---
 

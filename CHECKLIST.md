@@ -37,7 +37,7 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 ## Phase 4 — SP1 + first destination (Base)
 - [ ] 4.1 SP1 program: finality + inclusion → chain-neutral public values (fixed byte layout, no EVM ABI inside the proof)
 - [ ] 4.2 Execute mode, cycle count; then Groth16 proof. **Execute mode done** (see 0.10). **Real compressed STARK proof done** (278 s, verified, matches native). Groth16 wrap left (needs Docker + circuit download, or prover network)
-- [ ] 4.3 `SolanaLightClient.sol` in `contracts/evm/` (validator set hash per epoch, pinned SP1 verifier). Base first, same code on any EVM chain
+- [ ] 4.3 `SolanaLightClient.sol` in the separate `hugin-evm` repo (depends on `huginn-prover`) (validator set hash per epoch, pinned SP1 verifier). Base first, same code on any EVM chain
 - [ ] 4.4 `SolanaTx.sol` library: decode signers / instructions on the destination chain
 - [ ] 4.5 Foundry tests with real proof fixtures, gas recorded
 
