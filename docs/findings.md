@@ -72,6 +72,22 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
   - All are **fast finalization** (`notar_aggregate validators: 0`, so FinalizeFast). With 100% of stake on one validator, the slow path never occurs locally. Slow-path real data needs the multi-validator cluster (2.6); until then it's covered by synthetic tests.
   - Footers also carry a NotarReward cert for an older slot (e.g. slot 20 → slot 12).
 
+### Local footer certificates: verified exactly (item 2.3, 2026-11-03)
+- `cert::verify_footer` decompresses the 96-byte signature, then runs Agave's `verify_certificate` once per part:
+  - fast path: FinalizeFast(block) at 80%;
+  - slow path: Notarize(block) **and** Finalize(slot), each at 60%. Finalize(slot) alone doesn't say which block, so both must pass.
+- Decompression (`SignatureAffine::try_from(SignatureCompressed)`, blstrs `from_compressed`) also checks the point is in G2. Junk bytes fail before any pairing.
+- **All 40,999 certs** captured in epoch 0 (slots 903..~41,900) verify against `fixtures/local/validator_set_0.json` with shred version 28090. Nothing is approximate: same chain, same epoch, exact stakes. One footer (slot 980) has no cert.
+- Real-data tamper tests (`tests/local_footers.rs`, sample in `fixtures/local/footers_sample.jsonl`) — each fails:
+  - a signature bit flipped;
+  - block_id or slot changed;
+  - wrong shred version;
+  - the fast cert read as Finalize(slot);
+  - a different BLS key at rank 0;
+  - an empty bitmap.
+- Slow path is synthetic only (unit tests in `cert.rs`). These check that 61.8% passes, 49% fails, a notarization for a different block fails, and a slow footer read as fast fails.
+- The local epoch is 432,000 slots, so `validator_set_0.json` stays valid for about 48 hours of validator runtime.
+
 ### Decision: local Alpenglow validator (item 0.9, 2026-11-03)
 - **Chosen:** `solana-test-validator --alpenglow` (Agave v4.4.0, released 2026-10-28, macOS builds available). It activates Alpenglow at genesis and produces real footers with real BLS finalization certs, using the same code as devnet.
 - **Why:**

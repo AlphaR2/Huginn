@@ -23,7 +23,7 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 ## Phase 2 — data fetching (local Alpenglow validator)
 - [x] 2.1 Local Alpenglow validator running (Agave v4.4.0, Rust 1.98.1 installed); `fetch --cluster local` wrote `fixtures/local/` (shred 28090, 1 ranked validator)
 - [x] 2.2 `footer-dump` Geyser plugin (`plugins/footer-dump`, Rust 1.98.1) writes each footer's raw certs to `fixtures/local/footers.jsonl`
-- [ ] 2.3 Verify a local footer cert against the exact same-epoch set (fast path and slow path)
+- [x] 2.3 Verify a local footer cert against the exact same-epoch set: `cert::verify_footer`; all 40,999 captured certs pass, slow path synthetic
 - [ ] 2.4 Raw shreds + block_id for slot S, read from the local ledger
 - [ ] 2.5 One command producing a full fixture for any recent local slot
 - [ ] 2.6 (Later) Multi-validator local cluster, so bitmaps have more than one bit and ranking is exercised

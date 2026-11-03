@@ -16,7 +16,8 @@ use {
     serde::Deserialize,
     solana_bls_signatures::{
         pubkey::{PopVerified, PubkeyAffine, PubkeyCompressed},
-        Signature,
+        signature::SignatureAffine,
+        BlsError, Signature, SignatureCompressed,
     },
     solana_hash::Hash,
     std::num::NonZero,
@@ -31,8 +32,10 @@ pub type PopKey = PopVerified<PubkeyAffine>;
 pub enum Error {
     #[error("validator set has zero total stake")]
     EmptySet,
-    #[error("signature must be 192 bytes, got {0}")]
-    SignatureLength(usize),
+    #[error("signature must be {expected} bytes, got {got}")]
+    SignatureLength { expected: usize, got: usize },
+    #[error("compressed signature is not a valid G2 point: {0}")]
+    SignatureDecode(BlsError),
     #[error(transparent)]
     Cert(#[from] AgaveError),
 }
@@ -66,7 +69,7 @@ impl RpcGenesisCert {
             .signature
             .as_slice()
             .try_into()
-            .map_err(|_| Error::SignatureLength(self.signature.signature.len()))?;
+            .map_err(|_| Error::SignatureLength { expected: 192, got: self.signature.signature.len() })?;
         Ok(UnverifiedCertificate {
             cert_type: CertificateType::Genesis(Block {
                 slot: self.block.slot,
@@ -77,6 +80,78 @@ impl RpcGenesisCert {
             shred_version,
         })
     }
+}
+
+/// A block footer's `block_final_cert` (SIMD-0307), as the footer-dump plugin writes it.
+/// Byte fields are hex strings.
+#[derive(Clone, Debug, Deserialize)]
+pub struct FooterCert {
+    pub slot: u64,
+    #[serde(with = "hex::serde")]
+    pub block_id: [u8; 32],
+    pub final_aggregate: Aggregate,
+    /// Present only on the slow path.
+    pub notar_aggregate: Option<Aggregate>,
+}
+
+/// A compressed (96-byte) aggregate signature and the signer bitmap it covers.
+#[derive(Clone, Debug, Deserialize)]
+pub struct Aggregate {
+    #[serde(with = "hex::serde")]
+    pub signature: Vec<u8>,
+    #[serde(with = "hex::serde")]
+    pub bitmap: Vec<u8>,
+}
+
+impl Aggregate {
+    fn to_unverified(&self, cert_type: CertificateType, shred_version: u16) -> Result<UnverifiedCertificate, Error> {
+        let bytes: [u8; 96] = self
+            .signature
+            .as_slice()
+            .try_into()
+            .map_err(|_| Error::SignatureLength { expected: 96, got: self.signature.len() })?;
+        // Decompressing also checks the point is in G2, so junk bytes fail here.
+        let affine = SignatureAffine::try_from(SignatureCompressed(bytes)).map_err(Error::SignatureDecode)?;
+        Ok(UnverifiedCertificate {
+            cert_type,
+            signature: Signature::from(affine),
+            bitmap: self.bitmap.clone(),
+            shred_version,
+        })
+    }
+}
+
+impl FooterCert {
+    pub fn block(&self) -> Block {
+        Block { slot: self.slot, block_id: Hash::new_from_array(self.block_id) }
+    }
+
+    /// The certificates that must all verify for `block_id` to be final at `slot`.
+    ///
+    /// - Fast path: one FinalizeFast(block) at 80%.
+    /// - Slow path: Notarize(block) at 60% plus Finalize(slot) at 60%. Finalize votes don't
+    ///   name a block_id, so on its own it can't say *which* block is final; the
+    ///   notarization supplies that.
+    pub fn to_unverified(&self, shred_version: u16) -> Result<Vec<UnverifiedCertificate>, Error> {
+        Ok(match &self.notar_aggregate {
+            None => vec![self
+                .final_aggregate
+                .to_unverified(CertificateType::FinalizeFast(self.block()), shred_version)?],
+            Some(notar) => vec![
+                notar.to_unverified(CertificateType::Notarize(self.block()), shred_version)?,
+                self.final_aggregate
+                    .to_unverified(CertificateType::Finalize(self.slot), shred_version)?,
+            ],
+        })
+    }
+}
+
+/// Verifies a footer's finality certificate. On success, the returned block is final.
+pub fn verify_footer(cert: &FooterCert, shred_version: u16, set: &ValidatorSet) -> Result<Block, Error> {
+    for c in cert.to_unverified(shred_version)? {
+        verify(c, set)?;
+    }
+    Ok(cert.block())
 }
 
 impl RankedValidator {
@@ -255,6 +330,84 @@ mod tests {
         // Same keys, ranks shifted by one: the bitmap now points at the wrong people.
         set.entries.rotate_left(1);
         assert_eq!(verify(cert, &set).unwrap_err(), bad_sig());
+    }
+
+    fn compressed(cert: &UnverifiedCertificate) -> Aggregate {
+        let affine = SignatureAffine::try_from(&cert.signature).unwrap();
+        Aggregate { signature: SignatureCompressed::from(affine).0.to_vec(), bitmap: cert.bitmap.clone() }
+    }
+
+    const BLOCK_ID: [u8; 32] = [7; 32];
+
+    fn block(slot: u64) -> Block {
+        Block { slot, block_id: Hash::new_from_array(BLOCK_ID) }
+    }
+
+    fn fast_footer(kps: &[Keypair], signers: &[usize]) -> FooterCert {
+        let fin = signed(kps, CertificateType::FinalizeFast(block(5)), signers);
+        FooterCert { slot: 5, block_id: BLOCK_ID, final_aggregate: compressed(&fin), notar_aggregate: None }
+    }
+
+    fn slow_footer(kps: &[Keypair], notar: CertificateType, signers: &[usize]) -> FooterCert {
+        let notar = signed(kps, notar, signers);
+        let fin = signed(kps, CertificateType::Finalize(5), signers);
+        FooterCert {
+            slot: 5,
+            block_id: BLOCK_ID,
+            final_aggregate: compressed(&fin),
+            notar_aggregate: Some(compressed(&notar)),
+        }
+    }
+
+    #[test]
+    fn fast_footer_needs_80_percent() {
+        let (kps, set) = setup();
+        // Ranks 0..=5: 450 of 550 (81.8%).
+        assert_eq!(verify_footer(&fast_footer(&kps, &[0, 1, 2, 3, 4, 5]), SHRED, &set).unwrap(), block(5));
+        // Ranks 0..=4: 400 of 550 (72.7%). Enough for the slow path, not the fast one.
+        let err = verify_footer(&fast_footer(&kps, &[0, 1, 2, 3, 4]), SHRED, &set).unwrap_err();
+        assert!(matches!(err, Error::Cert(NotEnoughStake { .. })));
+    }
+
+    #[test]
+    fn slow_footer_needs_both_certs_at_60_percent() {
+        let (kps, set) = setup();
+        // Ranks 0..=3: 340 of 550 (61.8%).
+        let signers = [0, 1, 2, 3];
+        let good = slow_footer(&kps, CertificateType::Notarize(block(5)), &signers);
+        assert_eq!(verify_footer(&good, SHRED, &set).unwrap(), block(5));
+
+        // Ranks 0..=2: 270 of 550 (49%).
+        let weak = slow_footer(&kps, CertificateType::Notarize(block(5)), &[0, 1, 2]);
+        assert!(matches!(verify_footer(&weak, SHRED, &set).unwrap_err(), Error::Cert(NotEnoughStake { .. })));
+
+        // The Finalize part is real, but the notarization is for another block. The footer
+        // claims BLOCK_ID, so the notar signature doesn't match and the footer fails.
+        let other = Block { slot: 5, block_id: Hash::new_from_array([8; 32]) };
+        let swapped = slow_footer(&kps, CertificateType::Notarize(other), &signers);
+        assert_eq!(verify_footer(&swapped, SHRED, &set).unwrap_err(), bad_sig());
+    }
+
+    #[test]
+    fn slow_footer_read_as_fast_fails() {
+        let (kps, set) = setup();
+        let mut c = slow_footer(&kps, CertificateType::Notarize(block(5)), &SIGNERS);
+        // Without the notar part we'd read the Finalize(slot) signature as FinalizeFast(block).
+        c.notar_aggregate = None;
+        assert_eq!(verify_footer(&c, SHRED, &set).unwrap_err(), bad_sig());
+    }
+
+    #[test]
+    fn footer_signature_must_be_96_valid_bytes() {
+        let (kps, set) = setup();
+        let mut c = fast_footer(&kps, &SIGNERS);
+        c.final_aggregate.signature.push(0);
+        assert_eq!(
+            verify_footer(&c, SHRED, &set).unwrap_err(),
+            Error::SignatureLength { expected: 96, got: 97 }
+        );
+        c.final_aggregate.signature = vec![0xff; 96];
+        assert!(matches!(verify_footer(&c, SHRED, &set).unwrap_err(), Error::SignatureDecode(_)));
     }
 
     #[test]
