@@ -125,6 +125,23 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
   - Still to measure in 4.2: wall-clock proving time and cost (local CPU vs prover network) and the Groth16 wrap.
   - Optimizations held in reserve, not needed yet: commit uncompressed keys (no square root per key); skip per-key subgroup checks for a committed set (the vote program already checked proof of possession); prove the set hash once per epoch instead of per proof.
 
+### First real proof (item 4.2, part 1, 2026-11-03)
+- `zk/script --prove core|compressed|groth16` proves each run, verifies the proof, checks its public values equal native `encode()`, and writes `fixtures/proofs/<run>.<mode>.json` (program vkey, public values, timings, and for Groth16 the onchain proof bytes). The `.bin` (full proof, bincode) is git-ignored.
+- **Compressed (STARK) proof of the real memo transfer**, CPU prover on an M3 Pro (11 cores, 18 GB):
+
+  | | |
+  |---|---:|
+  | cycles | 5.12M |
+  | setup | 1.4 s |
+  | prove | 278 s (~4.6 min; 1,768 s CPU time across cores) |
+  | verify | 0.05 s |
+  | proof file | 1.27 MB |
+  | peak RSS | 10.8 GB |
+
+- Program vkey: `0x000482e733e78ebf067e60f986f6ce40a167d0f233e82b3bdacc66f5d195fc1b`. It changes whenever the program or its dependencies change; destination contracts pin it.
+- **Groth16 is not done yet.** SP1 v6.10.0 wraps the compressed proof with gnark (circuit version `v6.1.0`), either in Docker (`ghcr.io/succinctlabs/sp1-gnark:v6.1.0`) or natively (feature `native-gnark`, needs Go). Both need the Groth16 circuit artifacts downloaded into `~/.sp1/circuits` (several GB). Docker Desktop is installed here but not running. Go is not installed.
+- Rough local estimate for a 1,000-validator proof: proving time grows with cycles, so ~47M cycles is ~9x this run, i.e. tens of minutes on this Mac. That's fine for testing but not for a service; the prover network (or a GPU) is the production path.
+
 ### Finality API and set commitment (items 1.1–1.3, 2026-11-03)
 - `alpenglow_core::proof::FinalityInput::verify` returns `Finality { validator_set_hash, shred_version, slot, block_id, path: Fast|Slow, signed_stake, total_stake }`. On the slow path, `signed_stake` is the Finalize part's.
 - **Set commitment (1.1):** `sha256("huginn-validator-set-v1" | count u32 LE | per rank: bls_pubkey[48] | stake u64 LE)`. Rank order is included, because bitmaps index by rank.

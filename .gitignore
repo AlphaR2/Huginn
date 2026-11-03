@@ -7,3 +7,4 @@ fixtures/local/footers.jsonl
 zk/program/target/
 zk/script/target/
 zk/program/Cargo.lock
+fixtures/proofs/*.bin
