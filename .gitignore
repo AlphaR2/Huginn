@@ -2,3 +2,5 @@ target/
 **/target/
 .env
 .local-ledger/
+# Raw footer stream from the footer-dump plugin. Grows forever; commit samples only.
+fixtures/local/footers.jsonl

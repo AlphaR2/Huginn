@@ -1,0 +1,3 @@
+# Must match agave v4.4.0's rust-toolchain.toml: Rust has no stable ABI between compilers.
+[toolchain]
+channel = "1.98.1"

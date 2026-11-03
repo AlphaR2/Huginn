@@ -1,0 +1,5 @@
+{
+  "name": "footer-dump",
+  "libpath": "target/release/libfooter_dump.dylib",
+  "out": "fixtures/local/footers.jsonl"
+}
