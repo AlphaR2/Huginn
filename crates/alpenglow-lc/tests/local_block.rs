@@ -1,8 +1,9 @@
 //! A whole local block, end to end (item 2.4): raw data shreds -> FEC set roots ->
 //! double Merkle root, which must equal the block_id the finality certificate signed.
 //!
-//! `fixtures/local/block_44000.json` was written by `ledger-dump --slot 44000`. It holds
-//! slot 44000's 96 data shreds plus the footer certs for 44000 and its parent 43999.
+//! `fixtures/local/block_44000.json` was written by `ledger-dump --slot 44000` and is
+//! self-contained: epoch-0 validator set, shred version, the footer certs for 44000 and its
+//! parent 43999, and slot 44000's 96 data shreds.
 
 use {
     alpenglow_lc::{
@@ -13,8 +14,6 @@ use {
     serde_json::Value,
 };
 
-const SHRED_VERSION: u16 = 28090;
-
 fn json(file: &str) -> Value {
     let p = format!("{}/../../fixtures/local/{file}", env!("CARGO_MANIFEST_DIR"));
     serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
@@ -22,6 +21,8 @@ fn json(file: &str) -> Value {
 
 struct Block {
     slot: u64,
+    shred_version: u16,
+    set: ValidatorSet,
     parent_slot: u64,
     cert: FooterCert,
     parent_cert: FooterCert,
@@ -32,6 +33,8 @@ fn load() -> Block {
     let v = json("block_44000.json");
     Block {
         slot: v["slot"].as_u64().unwrap(),
+        shred_version: v["shred_version"].as_u64().unwrap() as u16,
+        set: serde_json::from_value(v["validator_set"].clone()).unwrap(),
         parent_slot: v["parent_slot"].as_u64().unwrap(),
         cert: serde_json::from_value(v["block_final_cert"].clone()).unwrap(),
         parent_cert: serde_json::from_value(v["parent_block_final_cert"].clone()).unwrap(),
@@ -44,10 +47,6 @@ fn load() -> Block {
     }
 }
 
-fn set() -> ValidatorSet {
-    serde_json::from_value(json("validator_set_0.json")["validator_set"].clone()).unwrap()
-}
-
 /// Block id from raw shreds, with the parent's id taken from the parent's certificate.
 fn rebuild(b: &Block, shreds: &[Vec<u8>]) -> Result<Hash, shred::Error> {
     let parsed = shreds.iter().map(|s| Shred::parse(s)).collect::<Result<Vec<_>, _>>()?;
@@ -58,10 +57,12 @@ fn rebuild(b: &Block, shreds: &[Vec<u8>]) -> Result<Hash, shred::Error> {
 #[test]
 fn shreds_rebuild_the_certified_block_id() {
     let b = load();
-    let set = set();
+    // The embedded set is the one `fetch` saved for epoch 0.
+    let saved: ValidatorSet = serde_json::from_value(json("validator_set_0.json")["validator_set"].clone()).unwrap();
+    assert_eq!(b.set, saved);
     // Both blocks are final, under the exact epoch-0 set.
-    assert_eq!(verify_footer(&b.cert, SHRED_VERSION, &set).unwrap().slot, b.slot);
-    assert_eq!(verify_footer(&b.parent_cert, SHRED_VERSION, &set).unwrap().slot, b.parent_slot);
+    assert_eq!(verify_footer(&b.cert, b.shred_version, &b.set).unwrap().slot, b.slot);
+    assert_eq!(verify_footer(&b.parent_cert, b.shred_version, &b.set).unwrap().slot, b.parent_slot);
     // The parent slot in the shred header matches the fixture.
     assert_eq!(Shred::parse(&b.shreds[0]).unwrap().parent_slot(), Some(b.parent_slot));
 
@@ -78,6 +79,8 @@ fn shred_layout_matches_expectations() {
     // Only the final shred is flagged last-in-slot.
     assert!(shreds[95].last_in_slot());
     assert!(shreds[..95].iter().all(|s| !s.last_in_slot()));
+    // Every shred carries the cluster's shred version, the one the votes signed.
+    assert!(shreds.iter().all(|s| s.version() == b.shred_version));
     // Sets 1 and 2 chain to the set before (checked inside fec_roots); set 0 chains to
     // the parent's *last FEC set root*, not to the parent's block_id.
     assert_ne!(shreds[0].chained_merkle_root(), b.parent_cert.block_id);

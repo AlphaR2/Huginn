@@ -122,6 +122,11 @@ impl<'a> Shred<'a> {
         u32_at(self.bytes, 73)
     }
 
+    /// The cluster's shred version, the same value every vote payload signs.
+    pub fn version(&self) -> u16 {
+        u16_at(self.bytes, 77)
+    }
+
     pub fn fec_set_index(&self) -> u32 {
         u32_at(self.bytes, 79)
     }

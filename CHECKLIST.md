@@ -25,7 +25,7 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 - [x] 2.2 `footer-dump` Geyser plugin (`plugins/footer-dump`, Rust 1.98.1) writes each footer's raw certs to `fixtures/local/footers.jsonl`
 - [x] 2.3 Verify a local footer cert against the exact same-epoch set: `cert::verify_footer`; all 40,999 captured certs pass, slow path synthetic
 - [x] 2.4 Raw shreds + block_id for slot S, read from the local ledger: `ledger-dump --slot S` (RocksDB read-only) → `fixtures/local/block_44000.json`; rebuilt block_id = certified block_id for 211/211 slots
-- [ ] 2.5 One command producing a full fixture for any recent local slot
+- [x] 2.5 One command producing a full fixture for any recent local slot: `cargo run --release -p ledger-dump` (newest certified slot, or `--slot S`); verifies both certs and the block_id before writing a self-contained `block_<S>.json`
 - [ ] 2.6 (Later) Multi-validator local cluster, so bitmaps have more than one bit and ranking is exercised
 
 ## Phase 3 — inclusion

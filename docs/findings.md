@@ -122,6 +122,19 @@ Sources: Agave v4.4.0 `ledger/src/shred/{merkle.rs,merkle_tree.rs,wire.rs}`, `le
   - a dropped FEC root.
 - Not checked: the leader's Ed25519 signature on each FEC root. It isn't needed, because the BLS certificate already commits to the block_id.
 
+### One-command block fixture (item 2.5, 2026-11-03)
+- Run `cargo run --release -p ledger-dump` with the validator running.
+  - It picks the newest certified slot still in the ledger; `--slot S` picks a specific one, and `--range` shows what's available.
+  - It writes `fixtures/local/block_<S>.json` with: epoch, shred version, that epoch's validator set, the footer certs for S and its parent, and S's data shreds.
+- **It refuses to write unless all of these hold:**
+  - both certs verify against the epoch's set;
+  - every shred carries the cluster's shred version;
+  - the shreds rebuild the certified block_id.
+- **Epoch:** `slot / 432000`. `solana-test-validator` has no warmup epochs (`getEpochInfo` reports 432,000 slots in epoch 0); override with `--slots-per-epoch`.
+- **Validator sets:** the set comes from `fixtures/local/validator_set_<epoch>.json`. RPC only serves current stakes, so `fetch validator-set --cluster local` must run during each epoch we want fixtures for. A missing set is a clear error, not a guess.
+- **Known gap:** a block whose parent is in the previous epoch would need two sets. The tool refuses such blocks for now.
+- `block_44000.json` was regenerated in this format, and `tests/local_block.rs` now reads its set and shred version from the fixture itself.
+
 ### Decision: local Alpenglow validator (item 0.9, 2026-11-03)
 - **Chosen:** `solana-test-validator --alpenglow` (Agave v4.4.0, released 2026-10-28, macOS builds available). It activates Alpenglow at genesis and produces real footers with real BLS finalization certs, using the same code as devnet.
 - **Why:**
