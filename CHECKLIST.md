@@ -31,19 +31,19 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 - [ ] 3.3 Rebuild entries, find tx, generic parse (legacy + v0): signers, instructions
 - [ ] 3.4 Tamper tests on shreds, siblings, tx bytes
 
-## Phase 4 — SP1 + Base
-- [ ] 4.1 SP1 program: finality + inclusion → generic public values
+## Phase 4 — SP1 + first destination (Base)
+- [ ] 4.1 SP1 program: finality + inclusion → chain-neutral public values (fixed byte layout, no EVM ABI inside the proof)
 - [ ] 4.2 Execute mode, cycle count; then Groth16 proof
-- [ ] 4.3 `SolanaLightClient.sol` (validator set hash per epoch, pinned SP1 verifier)
-- [ ] 4.4 `SolanaTx.sol` library: decode signers / instructions on Base
+- [ ] 4.3 `SolanaLightClient.sol` in `contracts/evm/` (validator set hash per epoch, pinned SP1 verifier). Base first, same code on any EVM chain
+- [ ] 4.4 `SolanaTx.sol` library: decode signers / instructions on the destination chain
 - [ ] 4.5 Foundry tests with real proof fixtures, gas recorded
 
 ## Phase 5 — relayer
-- [ ] 5.1 `relayer`: tx signature → fetch → prove → submit
+- [ ] 5.1 `relayer`: tx signature → fetch → prove → submit, with destination as a plug-in (EVM first)
 
 ## Phase 6 — demos
 - [ ] 6.1 Cross-chain ping (Memo)
-- [ ] 6.2 Solana key controlling a Base contract
+- [ ] 6.2 Solana key controlling a contract on Base
 - [ ] 6.3 Forged proof rejected
 - [ ] 6.4 One-pager + video
 

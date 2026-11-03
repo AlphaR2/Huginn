@@ -78,6 +78,12 @@ Sources: Agave v4.4.0 `entry/src/block_component.rs`, `runtime/src/block_compone
   - you get `SubscribeUpdateBlockFooter { slot, bank_hash, block_final_cert { slot, final_aggregate, notar_aggregate } }`;
   - each aggregate holds the signature, `block_id` and the signer-store bitmap verbatim.
   - Typed cert messages landed 2026-10-06. The latest release is `v16.2.0+solana.4.3.2` (2026-10-30). **A provider must run a recent build with footer certs enabled.** Not yet checked with any provider.
+- **Providers (checked 2026-11-03, from public pages):**
+  - Triton One maintains Yellowstone. Its Alpenglow guide confirms `block_footer` with `include_certificates: true` on Dragon's Mouth and Fumarole, and says JSON-RPC footers come in a later release.
+  - Pricing is prepaid: $0.08/GB streaming, $125 minimum deposit, valid for 12 months.
+  - At about 2.5 footers/s and roughly 1 KB each, footers cost cents per month. For our use the deposit is the real cost.
+  - Still unconfirmed: footer certs on Triton **devnet** specifically.
+  - Helius has devnet LaserStream from the $49/mo Developer plan, but footer cert support isn't documented.
 - Still not exposed: plain RPC (`getBlock`), `agave-ledger-tool`, and the blockstore read API. There are no footer helpers in v4.4.0.
 - **Phase 3 warning:** proving that a transaction is inside a block_id needs the **shreds** (Merkle paths up to the last data shred's root). Yellowstone streams entries and transactions, not shreds. Rebuilding exact shreds from entries is unproven. So inclusion proofs will probably need our own node, or a provider that serves shreds. Decide in Phase 3.
 
@@ -140,5 +146,5 @@ Sources: Agave v4.4.0 `entry/src/block_component.rs`, `runtime/src/block_compone
 
 ## Trust assumptions (stated, not hidden)
 
-- The validator set posted to Base is trusted input. We post it ourselves.
+- The validator set posted to each destination chain is trusted input. We post it ourselves.
 - We don't re-check BLS proof of possession. We rely on the vote program's check at registration. A later improvement: re-check once per epoch when posting the set.

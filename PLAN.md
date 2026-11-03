@@ -2,10 +2,25 @@
 
 This file has two parts:
 
-1. **Revision 1 (current direction)**, below. It replaces the goal of v1.
+1. **Revisions 2 and 1 (current direction)**, below. Revision 2 widens Revision 1 from Base to any destination chain.
 2. **Version 1 (original plan)**, kept unchanged further down. Most of its reference material (sections 8.1 to 8.7, risks, references) still applies.
 
 Corrections to v1 found by reading Agave's source and real data are listed in [`docs/findings.md`](docs/findings.md). Where the two disagree, findings.md wins. The build order lives in [`CHECKLIST.md`](CHECKLIST.md).
+
+---
+
+## Revision 2 (3 Nov 2026): any destination chain, Base first
+
+Huginn is a general cross-chain verifier: **verify Solana transactions on any chain, using Solana's own validators.** Base is the first destination, not the only one.
+
+What this means for the build:
+- **The core stays chain-free.** `alpenglow-lc` and the SP1 program know nothing about the destination. The proof's public values use a fixed, documented byte layout (not Solidity ABI), so every destination decodes the same bytes.
+- **The proof is portable.** An SP1 Groth16 proof over BN254 verifies on every EVM chain (Ethereum, Base, Arbitrum, Optimism, ...) and on non-EVM chains that have BN254 pairings.
+- **Destination code is a thin adapter.** `contracts/evm/` holds `SolanaLightClient` and `SolanaTx`, which deploy unchanged to any EVM chain. Base is the first deployment. Other chain families get their own adapter folder later.
+- **The relayer has a destination plug-in.** It shares fetch and prove; only "submit" is per chain.
+- **Epoch sets are per destination.** Each chain's light client keeps its own validator set hashes. The same posting job serves all of them.
+
+Wherever Revision 1 below says "Base", read "the destination chain (Base first)".
 
 ---
 
