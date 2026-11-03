@@ -103,7 +103,43 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
 
   Core and Agave accept and reject exactly the same inputs.
 - `block_proof::BlockProofInput::verify` is the whole check the SP1 program runs (finality, then inclusion). It outputs `{validator_set_hash, shred_version, slot, block_id, signed_stake, total_stake}`. The layout is provisional until 1.1 and 4.1.
-- SP1 program in `zk/program`, execute-mode runner in `zk/script` (real fixture plus synthetic sets of N validators). **Not yet run: waiting on the SP1 toolchain install.**
+- **The SP1-patched `bls12_381` differs from crates.io 0.8.0:** its hash-to-curve takes a digest-0.10 hasher and a message given as a list of byte slices. So the main workspace `[patch]`es in the SP1 copy too (`Cargo.toml`), and native tests and the zkVM compile identical curve code. `sha2-09` is gone.
+- SP1 toolchain installed: `cargo-prove` v6.10.0 (built 2026-10-23), `succinct` rustc 1.96.0-dev. `zk/program` builds with `cargo prove build`. Its lock resolves `sha2` to the patched 0.10.8; the unused 0.9.9 patch was removed.
+- **`zk/script` needs `protoc`** (`brew install protobuf`): `sp1-prover-types` runs prost-build unconditionally, even with no sdk features. Cycle counts are pending on that.
+
+### Finality API and set commitment (items 1.1–1.3, 2026-11-03)
+- `alpenglow_core::proof::FinalityInput::verify` returns `Finality { validator_set_hash, shred_version, slot, block_id, path: Fast|Slow, signed_stake, total_stake }`. On the slow path, `signed_stake` is the Finalize part's.
+- **Set commitment (1.1):** `sha256("huginn-validator-set-v1" | count u32 LE | per rank: bls_pubkey[48] | stake u64 LE)`. Rank order is included, because bitmaps index by rank.
+  - Local epoch 0: `b1f25236519c10b064498b6507ed0b87b88ad4df728a0a348e9434769d7d3c11`.
+  - `fetch validator-set` writes it as `commitment`.
+  - Any change to a key, a stake, the order or the count changes it. That's what stops a prover from inflating stakes in its own input: the destination chain compares against the hash it stored.
+- **Adversarial tests (1.3)**, all refused:
+  - the slow-path trap (Finalize(slot) read as FinalizeFast, or paired with a Notarize for another block);
+  - a shred version mismatch;
+  - the wrong epoch's set (other keys, or the same keys reordered);
+  - real signatures below 80% on the fast path (accepted at the same stake on the slow path, as it should be);
+  - zero total stake, a bad key length, an off-curve key, a bitmap longer than the set.
+- Synthetic sets (`fixture::synthetic_set`): deterministic secret keys `i+2`, aggregate signature `H(m)·Σsk`. Used because the local chain has one validator.
+
+### Transactions from shreds (items 3.3–3.4, 2026-11-03)
+Sources: Agave v4.4.0 `entry/src/block_component.rs`, `entry/src/entry.rs`, `ledger/src/shredder.rs` (`deshred`), `ledger/src/blockstore.rs` (`get_slot_components_with_shred_info`).
+- **Components:** consecutive data shreds up to and including one flagged DATA_COMPLETE (flags `0b0100_0000`) deshred into one wincode `BlockComponent`. The data is `shred[88..size]`, with `size` at header bytes 86..88.
+  - Entry batch: `count u64 (>0) | Entry*`, where `Entry = num_hashes u64 | hash[32] | tx_count u64 | VersionedTransaction*` (wincode `BincodeLen` = u64 lengths).
+  - Marker: `0u64 | version u16 (=1) | variant u8 | len u16 | data`. Variants: 0 footer, 1 header, 2 update-parent, 3 genesis cert. Header/update-parent data = `tag u8 (=1) | parent_slot u64 | parent_block_id[32]`.
+- **Observed local layout:** header → entry batches → footer → one final tick entry.
+  - **Every component is padded to whole FEC sets**: DATA_COMPLETE falls on shreds 31, 63, 95, 127. That's why near-empty blocks still have 3–4 FEC sets.
+  - The header's parent equals the parent leaf of the double Merkle root (checked on 46718).
+- **Real transaction:** a 0.5 SOL transfer with the memo "huginn: hello from solana", sent from the local faucet, landed in slot 46718 (legacy, success).
+  - Parsed out of the block's shreds, its 275 bytes equal `getTransaction`'s (`fixtures/local/tx_46718.json`).
+  - It sits in component 2 (shreds 32..63), entry 0, tx 0.
+- **Transaction parser** (`tx.rs`): legacy and v0, compact-u16 lengths (canonical only), plus the runtime's structural rules (signature count = header, writable fee payer, program ids static and not the payer, indexes in range, at most 256 accounts).
+- **Efficient inclusion (`TxInclusion`):**
+  - The block_id is rebuilt from **all FEC roots** (32 bytes each) plus the parent.
+  - Only the transaction's **own component** shreds are given; each proves itself against its FEC root with its embedded Merkle proof.
+  - The **one shred before the run** must be in the block and flagged DATA_COMPLETE, so the run starts at a real boundary and can't be read out of frame.
+  - For block 46718 that's 32 of 128 shreds. On mainnet, proof cost scales with the transaction's component, not the block.
+- **Inclusion ≠ success.** Failed transactions are in blocks too (they pay fees). Proving success needs execution results (status/bank hash), which no certificate signs today → Phase 7.
+- **Public values v1** (`TxOutput::encode`, provisional for 4.1): fixed big-endian layout with offsets documented in code: version, set hash, shred version, slot, block_id, path, stakes, position, tx length, then the tx bytes exactly as in the block.
 
 ### Block_id from raw shreds (item 2.4, 2026-11-03)
 Sources: Agave v4.4.0 `ledger/src/shred/{merkle.rs,merkle_tree.rs,wire.rs}`, `ledger/src/blockstore.rs` (`get_block_id`, `build_double_merkle_tree`), `ledger/src/blockstore/column.rs`.

@@ -11,7 +11,7 @@ Both run inside an SP1 zkVM program, which outputs one Groth16 proof with chain-
 
 **First target: Base.** The same Solidity contracts work on other EVM chains (Ethereum, Arbitrum, Optimism, ...). Non-EVM destinations need only their own verifier wrapper.
 
-> Status: Phase 0 (go/no-go). Nothing here is production-ready. See [`CHECKLIST.md`](CHECKLIST.md).
+> Status: native verifier complete (finality + transaction inclusion, on real local Alpenglow data); SP1 cycle measurement in progress. Nothing here is production-ready. See [`CHECKLIST.md`](CHECKLIST.md).
 
 ## What is trusted
 
@@ -27,12 +27,16 @@ Program state or execution results, for example "this transaction succeeded" or 
 ## Layout
 
 ```
-crates/alpenglow-lc/   light client: certificates, validator set, inclusion, tx parsing (no network, no zkVM)
-crates/fetch/          CLI that pulls certs, validator sets and shreds into fixtures/
-sp1/                   (later) zkVM program + host script, separate workspaces
-contracts/evm/         (later) Foundry: SolanaLightClient, SolanaTx, examples. Base first
-fixtures/              real data from mainnet and devnet
-docs/                  findings and research
+crates/alpenglow-core/  the verifier: certificates, block_id, transactions. Pure Rust, runs inside SP1
+crates/alpenglow-lc/    reference checks on Agave's own crates; validator set ranking
+crates/fetch/           CLI: genesis certs, shred version, validator sets (with commitment) from RPC
+crates/ledger-dump/     CLI: one block's shreds from a local ledger -> verified, self-contained fixture
+plugins/footer-dump/    Geyser plugin that captures every block footer's finality certificate
+zk/program/             SP1 program: proves finality + one transaction, commits fixed-layout public values
+zk/script/              runs the program in execute mode (cycle counts) on real and synthetic sets
+contracts/evm/          (later) Foundry: SolanaLightClient, SolanaTx, examples. Base first
+fixtures/               real data from mainnet, devnet and the local Alpenglow validator
+docs/                   findings, codebase guide, research
 ```
 
 ## Docs
@@ -40,6 +44,7 @@ docs/                  findings and research
 - [`PLAN.md`](PLAN.md): direction (Revisions 1 and 2) and the original v1 plan
 - [`CHECKLIST.md`](CHECKLIST.md): build order and progress
 - [`docs/findings.md`](docs/findings.md): what we confirmed against real code and data, and the corrections to the plan
+- [`docs/codebase.md`](docs/codebase.md): a guided tour of every folder and file
 
 ## Build
 
