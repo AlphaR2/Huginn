@@ -18,6 +18,8 @@ A running log of what we confirmed against real code and data. Where this file d
 | Foundry | not installed | Needed for Phase 4 |
 | rustc for Geyser plugin | 1.98.1 | Must match Agave 4.4.0's toolchain (dylib ABI) |
 | Anchor | 1.1.2 | Only needed if we build the optional outbox |
+| SP1 | 6.10.0 (2026-10-23) | `sp1-zkvm`, `sp1-sdk`, `sp1-build` =6.10.0. Patches: `bls12_381` patch-0.8.0-sp1-6.10.0, `sha2` patch-sha2-0.10.8/0.9.9-sp1-6.10.0 |
+| bls12_381 (alpenglow-core) | =0.8.0 | The version SP1 patches. `experimental` for hash_to_curve, which needs a digest-0.9 hasher (sha2 0.9) |
 | rocksdb (ledger-dump) | =0.24.0 | librocksdb-sys 0.17.3+10.4.2, same as Agave 4.4.0. Features `lz4`, `bindgen-runtime` (finds macOS libclang without env vars) |
 
 ## Environment
@@ -88,6 +90,20 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
   - an empty bitmap.
 - Slow path is synthetic only (unit tests in `cert.rs`). These check that 61.8% passes, 49% fails, a notarization for a different block fails, and a slow footer read as fast fails.
 - The local epoch is 432,000 slots, so `validator_set_0.json` stays valid for about 48 hours of validator runtime.
+
+### SP1 go/no-go (item 0.10, in progress, 2026-11-03)
+- **Agave's BLS stack can't run in SP1 as is.** `solana-bls-signatures` uses `blstrs` → `blst`, which is C and assembly. SP1 has no acceleration for it.
+- SP1 *does* accelerate BLS12-381 through its patched zkcrypto `bls12_381` 0.8.0. The precompiles cover G1/G2 add and double, decompression, and Fp/Fp2 arithmetic. No pairing precompile was found in the docs.
+- **So `crates/alpenglow-core` reimplements the check** on `bls12_381` + `sha2`, with no Agave crates and no C. It holds `finality` (payload, base2 bitmap, hash_to_curve with the Agave DST, a pairing check in one multi-Miller loop, and the stake threshold by cross-multiplication) and `shred` (moved from alpenglow-lc). `alpenglow-lc` keeps Agave's verifier as the reference.
+- **Equivalence with Agave (`alpenglow-lc/tests/core_matches_agave.rs`):**
+  - payload bytes for Notarize, FinalizeFast, Finalize and Genesis;
+  - all 45,660 captured local footer certs;
+  - the real devnet genesis cert (192-byte uncompressed signature);
+  - 400 random synthetic certs over 24 validators (all four types, every signer-set size, tampered signatures, bitmaps, shred versions, oversized bitmaps).
+
+  Core and Agave accept and reject exactly the same inputs.
+- `block_proof::BlockProofInput::verify` is the whole check the SP1 program runs (finality, then inclusion). It outputs `{validator_set_hash, shred_version, slot, block_id, signed_stake, total_stake}`. The layout is provisional until 1.1 and 4.1.
+- SP1 program in `zk/program`, execute-mode runner in `zk/script` (real fixture plus synthetic sets of N validators). **Not yet run: waiting on the SP1 toolchain install.**
 
 ### Block_id from raw shreds (item 2.4, 2026-11-03)
 Sources: Agave v4.4.0 `ledger/src/shred/{merkle.rs,merkle_tree.rs,wire.rs}`, `ledger/src/blockstore.rs` (`get_block_id`, `build_double_merkle_tree`), `ledger/src/blockstore/column.rs`.

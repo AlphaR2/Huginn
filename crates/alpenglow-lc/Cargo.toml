@@ -6,6 +6,7 @@ license.workspace = true
 version.workspace = true
 
 [dependencies]
+alpenglow-core = { path = "../alpenglow-core" }
 agave-bls-cert-verify.workspace = true
 agave-votor-messages.workspace = true
 solana-bls-signatures.workspace = true

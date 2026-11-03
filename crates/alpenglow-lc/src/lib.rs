@@ -1,3 +1,3 @@
 pub mod cert;
-pub mod shred;
+pub use alpenglow_core::shred;
 pub mod validator_set;
