@@ -21,7 +21,7 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 - [ ] 1.3 Adversarial tests (slow-path trap, shred_version mismatch, wrong epoch, low stake)
 
 ## Phase 2 — data fetching (local Alpenglow validator)
-- [ ] 2.1 **You:** install Agave v4.4.0 and Rust 1.98.1; run `solana-test-validator --alpenglow`; `fetch --cluster local` reads its genesis cert and validator set
+- [ ] 2.1 **You:** install Agave v4.4.0 and Rust 1.98.1 ✅; run `solana-test-validator --alpenglow` ✅; `fetch --cluster local` reads its validator set and shred version (code done, needs a live run)
 - [ ] 2.2 `footer-dump` Geyser plugin: writes each block footer's raw finalization certs to `fixtures/local/footers/`
 - [ ] 2.3 Verify a local footer cert against the exact same-epoch set (fast path and slow path)
 - [ ] 2.4 Raw shreds + block_id for slot S, read from the local ledger

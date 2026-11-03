@@ -59,6 +59,14 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
 - Hash-to-curve DST: `BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_`. *(confirmed)*
 - `verify_signature` hashes the raw payload bytes directly. There is no extra pre-hash step.
 
+### Local Alpenglow validator: first run (item 2.1, 2026-11-03)
+- Agave v4.4.0 `solana-test-validator --alpenglow --ledger .local-ledger --reset` runs. Shred version **28090**, one validator with about 1M SOL stake. Every slot reaches finalized.
+- `getAgGenesisCert` returns an **all-zero placeholder** (slot 0, zero block_id, signature and bitmap). The cluster started on Alpenglow, so it never migrated and no real genesis cert exists. `fetch genesis-cert` now refuses it.
+- Footers carry certs: `agave-ledger-tool -l .local-ledger slot N -vvv`. **It needs `-vvv`**; `-vv` hides block markers.
+  - Across slots 1..293, the footer of slot N always holds the finalization cert for slot **N−1**. Slot 1 has none.
+  - All are **fast finalization** (`notar_aggregate validators: 0`, so FinalizeFast). With 100% of stake on one validator, the slow path never occurs locally. Slow-path real data needs the multi-validator cluster (2.6); until then it's covered by synthetic tests.
+  - Footers also carry a NotarReward cert for an older slot (e.g. slot 20 → slot 12).
+
 ### Decision: local Alpenglow validator (item 0.9, 2026-11-03)
 - **Chosen:** `solana-test-validator --alpenglow` (Agave v4.4.0, released 2026-10-28, macOS builds available). It activates Alpenglow at genesis and produces real footers with real BLS finalization certs, using the same code as devnet.
 - **Why:**

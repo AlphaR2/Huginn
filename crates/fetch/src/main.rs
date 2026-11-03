@@ -47,6 +47,8 @@ enum Cmd {
 enum Cluster {
     Mainnet,
     Devnet,
+    /// `solana-test-validator --alpenglow` on this machine.
+    Local,
 }
 
 impl Cluster {
@@ -54,12 +56,14 @@ impl Cluster {
         match self {
             Cluster::Mainnet => "mainnet",
             Cluster::Devnet => "devnet",
+            Cluster::Local => "local",
         }
     }
     fn default_rpc(self) -> &'static str {
         match self {
             Cluster::Mainnet => "https://api.mainnet-beta.solana.com",
             Cluster::Devnet => "https://api.devnet.solana.com",
+            Cluster::Local => "http://127.0.0.1:8899",
         }
     }
 }
@@ -88,6 +92,12 @@ fn main() -> Result<()> {
             let result = rpc.call("getAgGenesisCert", json!([]))?;
             if result.is_null() {
                 bail!("{} has no Alpenglow genesis certificate", cluster.name());
+            }
+            // A cluster that starts on Alpenglow at genesis (e.g. the local test validator)
+            // never migrated, so it returns an all-zero placeholder instead of a real cert.
+            let sig = result["signature"]["signature"].as_array().context("signature")?;
+            if sig.iter().all(|b| b.as_u64() == Some(0)) {
+                bail!("{} started on Alpenglow at genesis: the genesis cert is an all-zero placeholder", cluster.name());
             }
             let path = write(&cli.out, cluster, "genesis_cert.json", &json!({ "result": result }))?;
             println!("slot {} -> {}", result["block"]["slot"], path.display());
