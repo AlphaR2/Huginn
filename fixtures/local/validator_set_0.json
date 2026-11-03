@@ -1,0 +1,24 @@
+{
+  "cluster": "local",
+  "epoch": 0,
+  "fetched_at_slot": 378,
+  "source": "getVoteAccounts.activatedStake + vote account data (current epoch only)",
+  "stats": {
+    "ranked": 1,
+    "v4_accounts": 1,
+    "vote_accounts": 1,
+    "with_bls_key": 1
+  },
+  "validator_set": {
+    "entries": [
+      {
+        "bls_pubkey": "81c084ed3e55bea3d4a242e8e68aa94de44febb7f0213c74c635474d462c7962621770faf7f714e504c976cf348ff620",
+        "node_pubkey": "362b3a30e3bea31577f6f98a2de01b5085c0b20d453884cd13640d0a4b452f48",
+        "stake": 999999997717120,
+        "vote_pubkey": "c682b46dd55aa30f3c58c634909d98030a749d001c63fb2f9f7a9db22279e0f5"
+      }
+    ],
+    "epoch": 0,
+    "total_stake": 999999997717120
+  }
+}
