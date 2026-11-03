@@ -85,6 +85,11 @@ Sources: Agave v4.4.0 `entry/src/block_component.rs`, `runtime/src/block_compone
   - Still unconfirmed: footer certs on Triton **devnet** specifically.
   - Helius has devnet LaserStream from the $49/mo Developer plan, but footer cert support isn't documented.
 - Still not exposed: plain RPC (`getBlock`), `agave-ledger-tool`, and the blockstore read API. There are no footer helpers in v4.4.0.
+- **getBlock footers (searched 2026-11-03):**
+  - No Agave PR adds footers to `getBlock`.
+  - Triton's Superbank RPC and Old Faithful (yellowstone-faithful #409) serve `footer: {blockProducerTimeNanos, blockUserAgent}` only, **without certificates**.
+  - Agave's BigTable upload stores raw block markers, certs included (agave #13423). The public RPC route therefore isn't coming soon for certs.
+  - **Local route:** `Blockstore::get_complete_block_with_components` and `agave-ledger-tool slot -vv` print footers (agave #12532). So a local validator's footers can be read without writing a Geyser plugin.
 - **Phase 3 warning:** proving that a transaction is inside a block_id needs the **shreds** (Merkle paths up to the last data shred's root). Yellowstone streams entries and transactions, not shreds. Rebuilding exact shreds from entries is unproven. So inclusion proofs will probably need our own node, or a provider that serves shreds. Decide in Phase 3.
 
 ### Full certificate verification in Rust (item 0.8)
