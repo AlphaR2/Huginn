@@ -35,11 +35,11 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 - [x] 3.4 Tamper tests on shreds, siblings, tx bytes: plus boundary framing, foreign/truncated shreds, wrong roots/parent, and a no-panic fuzz
 
 ## Phase 4 — SP1 + first destination (Base)
-- [ ] 4.1 SP1 program: finality + inclusion → chain-neutral public values (fixed byte layout, no EVM ABI inside the proof)
+- [x] 4.1 SP1 program: finality + inclusion → chain-neutral public values (fixed byte layout, no EVM ABI inside the proof). `zk/program` + `TxOutput::encode` (v1, 106-byte header + tx); proving exposed as the `huginn-prover` library
 - [ ] 4.2 Execute mode, cycle count; then Groth16 proof. **Execute mode done** (see 0.10). **Real compressed STARK proof done** (278 s, verified, matches native). Groth16 wrap left (needs Docker + circuit download, or prover network)
-- [ ] 4.3 `SolanaLightClient.sol` in the separate `hugin-evm` repo (depends on `huginn-prover`) (validator set hash per epoch, pinned SP1 verifier). Base first, same code on any EVM chain
-- [ ] 4.4 `SolanaTx.sol` library: decode signers / instructions on the destination chain
-- [ ] 4.5 Foundry tests with real proof fixtures, gas recorded
+- [ ] 4.3 `SolanaLightClient.sol` in the separate `hugin-evm` repo (depends on `huginn-prover`) (validator set hash per epoch, pinned SP1 verifier). Base first, same code on any EVM chain. **Written** with .env-driven deploy/submit scripts; not compiled yet (needs Foundry)
+- [ ] 4.4 `SolanaTx.sol` library: decode signers / instructions on the destination chain. **Written** (legacy + v0, bounded counts); not compiled yet
+- [ ] 4.5 Foundry tests with real proof fixtures, gas recorded. **Written** (21 tests on the real proven memo transfer, stand-in verifier until Groth16); not run yet
 
 ## Phase 5 — relayer
 - [ ] 5.1 `relayer`: tx signature → fetch → prove → submit, with destination as a plug-in (EVM first)
