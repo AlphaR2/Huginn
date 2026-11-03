@@ -127,14 +127,20 @@ impl FinalityInput {
         if total_stake == 0 {
             return Err(Error::EmptySet);
         }
-        // Keys are decompressed only for ranks that signed: decompression is one of the
-        // costliest steps in the zkVM. A key that fails to decode is reported as a missing
-        // rank; Agave never ranks such a key (validator_set drops invalid keys).
-        let rank_map = |r: usize| {
-            let v = self.validators.get(r)?;
-            Some((v.stake, finality::pubkey_from_compressed(v.bls_pubkey.as_slice().try_into().ok()?).ok()?))
-        };
-        let check = |t: CertType, a: &Aggregate| {
+        // Keys are decompressed only for ranks that signed, and at most once each (the slow
+        // path checks two certificates over mostly the same signers): decompression is the
+        // costliest per-validator step in the zkVM. A key that fails to decode is reported
+        // as a missing rank; Agave never ranks such a key (validator_set drops invalid keys).
+        let mut decoded: Vec<Option<bls12_381::G1Affine>> = vec![None; self.validators.len()];
+        let mut check = |t: CertType, a: &Aggregate| {
+            let rank_map = |r: usize| {
+                let v = self.validators.get(r)?;
+                let key = match decoded[r] {
+                    Some(k) => k,
+                    None => *decoded[r].insert(finality::pubkey_from_compressed(v.bls_pubkey.as_slice().try_into().ok()?).ok()?),
+                };
+                Some((v.stake, key))
+            };
             finality::verify_cert(&t, self.shred_version, &signature(a)?, &a.bitmap, self.validators.len(), total_stake, rank_map)
                 .map_err(Error::from)
         };

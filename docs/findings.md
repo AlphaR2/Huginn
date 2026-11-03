@@ -91,7 +91,7 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
 - Slow path is synthetic only (unit tests in `cert.rs`). These check that 61.8% passes, 49% fails, a notarization for a different block fails, and a slow footer read as fast fails.
 - The local epoch is 432,000 slots, so `validator_set_0.json` stays valid for about 48 hours of validator runtime.
 
-### SP1 go/no-go (item 0.10, in progress, 2026-11-03)
+### SP1 go/no-go (item 0.10, 2026-11-03): **GO**
 - **Agave's BLS stack can't run in SP1 as is.** `solana-bls-signatures` uses `blstrs` → `blst`, which is C and assembly. SP1 has no acceleration for it.
 - SP1 *does* accelerate BLS12-381 through its patched zkcrypto `bls12_381` 0.8.0. The precompiles cover G1/G2 add and double, decompression, and Fp/Fp2 arithmetic. No pairing precompile was found in the docs.
 - **So `crates/alpenglow-core` reimplements the check** on `bls12_381` + `sha2`, with no Agave crates and no C. It holds `finality` (payload, base2 bitmap, hash_to_curve with the Agave DST, a pairing check in one multi-Miller loop, and the stake threshold by cross-multiplication) and `shred` (moved from alpenglow-lc). `alpenglow-lc` keeps Agave's verifier as the reference.
@@ -105,7 +105,25 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
 - `block_proof::BlockProofInput::verify` is the whole check the SP1 program runs (finality, then inclusion). It outputs `{validator_set_hash, shred_version, slot, block_id, signed_stake, total_stake}`. The layout is provisional until 1.1 and 4.1.
 - **The SP1-patched `bls12_381` differs from crates.io 0.8.0:** its hash-to-curve takes a digest-0.10 hasher and a message given as a list of byte slices. So the main workspace `[patch]`es in the SP1 copy too (`Cargo.toml`), and native tests and the zkVM compile identical curve code. `sha2-09` is gone.
 - SP1 toolchain installed: `cargo-prove` v6.10.0 (built 2026-10-23), `succinct` rustc 1.96.0-dev. `zk/program` builds with `cargo prove build`. Its lock resolves `sha2` to the patched 0.10.8; the unused 0.9.9 patch was removed.
-- **`zk/script` needs `protoc`** (`brew install protobuf`): `sp1-prover-types` runs prost-build unconditionally, even with no sdk features. Cycle counts are pending on that.
+- **`zk/script` needs `protoc`** (`brew install protobuf`): `sp1-prover-types` runs prost-build unconditionally, even with no sdk features. It also needs the same `bls12_381` `[patch]` (it builds alpenglow-core for the native cross-check), and `sp1-sdk` feature `profiling`; without it, cycle-tracker markers are ignored and the breakdown reads 0.
+- **Execute-mode results** (SP1 v6.10.0, program = `TxInput`: finality + the real memo transfer's inclusion). In every run the zkVM's public values equal native `encode()` byte for byte.
+
+  | Input | Finality | Inclusion | Total cycles |
+  |---|---:|---:|---:|
+  | real, 1 validator, fast | 3.86M | 0.63M | 5.12M |
+  | 100 validators, fast | 7.83M | 0.63M | 9.23M |
+  | 1,000 validators, fast | 44.0M | 0.63M | 46.7M |
+  | 1,500 validators, fast | 64.0M | 0.63M | 67.3M |
+  | 1,000 validators, slow | 49.3M | 0.63M | 51.9M |
+  | 1,500 validators, slow | 70.1M | 0.63M | 73.5M |
+
+  - **Fixed cost ≈ 3.9M** (hash-to-curve + one 2-pair pairing + signature decompression). **≈ 40k cycles per signing validator** (key decompression with subgroup check, G1 add, set-hash bytes).
+  - The slow path first measured 87.2M at n=1,000, because both certificates decompressed the same keys. Caching decoded keys in `FinalityInput::verify` brought it to 49.3M.
+  - **Inclusion is ≈ 0.63M**: 32 shreds of one component, 4 FEC roots, and parsing. It doesn't grow with block size, only with the transaction's component.
+  - Synthetic sets have ~90% of validators signing.
+- **Decision: GO.** A mainnet-sized set (~1,000–1,500 BLS validators) costs ~50–75M cycles per proof, dominated by per-signer key decompression. That's well within what SP1 proves routinely.
+  - Still to measure in 4.2: wall-clock proving time and cost (local CPU vs prover network) and the Groth16 wrap.
+  - Optimizations held in reserve, not needed yet: commit uncompressed keys (no square root per key); skip per-key subgroup checks for a committed set (the vote program already checked proof of possession); prove the set hash once per epoch instead of per proof.
 
 ### Finality API and set commitment (items 1.1–1.3, 2026-11-03)
 - `alpenglow_core::proof::FinalityInput::verify` returns `Finality { validator_set_hash, shred_version, slot, block_id, path: Fast|Slow, signed_stake, total_stake }`. On the slow path, `signed_stake` is the Finalize part's.

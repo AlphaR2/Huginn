@@ -13,7 +13,7 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 - [x] 0.7 Check the devnet genesis cert signature on real data (subset search over today's keys; MATCH, 11 of 22, shred_version 7016)
 - [x] 0.8 Native Rust verification with `agave-bls-cert-verify`, plus tamper tests (`alpenglow_lc::cert`; real devnet genesis cert verifies)
 - [x] 0.9 Decide how to get a current-epoch certificate → **local Alpenglow validator** (free; gives footers and shreds). A paid gRPC provider only if a live-network demo needs it
-- [ ] 0.10 SP1 execute-mode check → go/no-go written in findings.md. **Done:** pure-Rust verifier (`alpenglow-core`) identical to Agave on 45,660 real + 400 random certs; SP1 program builds. **Left:** cycle counts (runner needs `brew install protobuf`)
+- [x] 0.10 SP1 execute-mode check → go/no-go written in findings.md: **GO**. Pure-Rust verifier identical to Agave (45,660 real + 400 random certs); finality + tx inclusion ≈ 47M cycles at 1,000 validators (fast), 52M (slow), 67M at 1,500
 
 ## Phase 1 — finality API (`alpenglow-lc`)
 - [x] 1.1 `ValidatorSet` + commitment hash: `proof::validator_set_hash` (domain-separated SHA-256 over rank-ordered key+stake); `fetch` writes it; local epoch 0 = `b1f25236…7d3c11`
@@ -36,7 +36,7 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 
 ## Phase 4 — SP1 + first destination (Base)
 - [ ] 4.1 SP1 program: finality + inclusion → chain-neutral public values (fixed byte layout, no EVM ABI inside the proof)
-- [ ] 4.2 Execute mode, cycle count; then Groth16 proof
+- [ ] 4.2 Execute mode, cycle count; then Groth16 proof. **Execute mode done** (see 0.10); Groth16 proof and timing left
 - [ ] 4.3 `SolanaLightClient.sol` in `contracts/evm/` (validator set hash per epoch, pinned SP1 verifier). Base first, same code on any EVM chain
 - [ ] 4.4 `SolanaTx.sol` library: decode signers / instructions on the destination chain
 - [ ] 4.5 Foundry tests with real proof fixtures, gas recorded

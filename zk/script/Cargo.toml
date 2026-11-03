@@ -9,7 +9,8 @@ publish = false
 [workspace]
 
 [dependencies]
-sp1-sdk = "=6.10.0"
+# `profiling` makes the cycle-tracker markers in the program show up in the report.
+sp1-sdk = { version = "=6.10.0", features = ["profiling"] }
 tokio = { version = "1", features = ["full"] }
 alpenglow-core = { path = "../../crates/alpenglow-core", features = ["fixture"] }
 serde_json = "1"
@@ -19,3 +20,8 @@ anyhow = "1"
 
 [build-dependencies]
 sp1-build = "=6.10.0"
+
+# Same curve code as the program and the main workspace (alpenglow-core builds here too,
+# for the native cross-check of every run).
+[patch.crates-io]
+bls12_381 = { git = "https://github.com/sp1-patches/bls12_381", tag = "patch-0.8.0-sp1-6.10.0" }
