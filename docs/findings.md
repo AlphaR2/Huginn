@@ -142,6 +142,16 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
 - **Groth16 is not done yet.** SP1 v6.10.0 wraps the compressed proof with gnark (circuit version `v6.1.0`), either in Docker (`ghcr.io/succinctlabs/sp1-gnark:v6.1.0`) or natively (feature `native-gnark`, needs Go). Both need the Groth16 circuit artifacts downloaded into `~/.sp1/circuits` (several GB). Docker Desktop is installed here but not running. Go is not installed.
 - Rough local estimate for a 1,000-validator proof: proving time grows with cycles, so ~47M cycles is ~9x this run, i.e. tens of minutes on this Mac. That's fine for testing but not for a service; the prover network (or a GPU) is the production path.
 
+### EVM destination (items 4.3–4.5, 2026-11-04, repo `hugin-evm`)
+- Destinations are separate repos that depend on `huginn-prover`. `hugin-evm`'s relayer builds through that dependency and gets the same program vkey (`0x000482e7…5fc1b`).
+- Foundry 1.9.0, solc 0.8.28: **19 tests pass** on the real public values of the proven memo transfer, with a stand-in verifier that binds a proof to (vkey, public values).
+- Anvil, end to end: deploy (1,081,264 gas), then `submit` (**105,825 gas** including the 21k base). `isVerified(sig)` is true, and `finalizedBlock(46718)` equals the proven block_id.
+- Expected on a real chain: ~105k plus the SP1 Groth16 verifier (~270k), so ~380k per submit. To measure once a Groth16 proof exists.
+- SP1 v6.1.0's onchain verifier (`SP1VerifierGroth16.sol`, from the partial circuit download):
+  - takes `verifyProof(programVKey, publicValues, proofBytes)`;
+  - expects the first 4 bytes of `proofBytes` to equal its `VERIFIER_HASH` (`0x4388a21c…`);
+  - hashes the public values as `sha256(pv) & (2^253 − 1)`.
+
 ### Finality API and set commitment (items 1.1–1.3, 2026-11-03)
 - `alpenglow_core::proof::FinalityInput::verify` returns `Finality { validator_set_hash, shred_version, slot, block_id, path: Fast|Slow, signed_stake, total_stake }`. On the slow path, `signed_stake` is the Finalize part's.
 - **Set commitment (1.1):** `sha256("huginn-validator-set-v1" | count u32 LE | per rank: bls_pubkey[48] | stake u64 LE)`. Rank order is included, because bitmaps index by rank.
