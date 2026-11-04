@@ -43,11 +43,11 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 
 ## Phase 5 — the Huginn TUI (in `hugin-evm`, binary `huginn-evm`)
 One screen that runs the whole flow step by step: each step shows its status, time, the exact command or call it ran, and its output. Every step is also a plain subcommand.
-- [ ] 5.1 TUI shell: step list, detail/log panel, settings bar (memo, proof mode, source), keys (run all, run one, change mode, edit memo, quit)
-- [ ] 5.2 Solana steps: doctor (tools found?) → send memo → wait finalized → fetch certificate + shreds → prove (mock / compressed / groth16)
-- [ ] 5.3 EVM steps: start anvil → deploy → submit → `isVerified` → forged proof rejected
-- [ ] 5.4 The same steps as subcommands (`huginn-evm doctor|send|fetch|prove|deploy|submit|check`), for scripts and CI
-- [ ] 5.5 `docs/demo.md`: exact steps for the video, and what you should see
+- [x] 5.1 TUI shell: step list, detail/log panel, settings bar (memo, proof mode, source), keys (run all, run one, change mode, edit memo, quit). `hugin-evm/app/src/tui.rs` (ratatui); a render test prints the screen as text
+- [x] 5.2 Solana steps: doctor (tools found?) → send memo → wait finalized → fetch certificate + shreds → prove (mock / compressed / groth16). `app/src/steps.rs`; works on fresh transactions
+- [x] 5.3 EVM steps: start anvil → deploy → submit → `isVerified` → forged proof rejected (`InvalidProof`). All 10 steps in ~8 s with mock proofs
+- [x] 5.4 The same steps as subcommands: `huginn-evm run [steps…]`, state kept in `proofs/state.json` so steps run one at a time
+- [x] 5.5 `hugin-evm/docs/demo.md`: exact steps for the video, and what you should see
 
 ## Phase 6 — data sources anyone can plug in
 - [ ] 6.1 `BlockSource` interface in huginn; `ledger-dump` becomes the **local-ledger** adapter (also any Agave node's ledger: devnet/mainnet operators)
