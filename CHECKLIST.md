@@ -26,7 +26,7 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 - [x] 2.3 Verify a local footer cert against the exact same-epoch set: `cert::verify_footer`; all 40,999 captured certs pass, slow path synthetic
 - [x] 2.4 Raw shreds + block_id for slot S, read from the local ledger: `ledger-dump --slot S` (RocksDB read-only) → `fixtures/local/block_44000.json`; rebuilt block_id = certified block_id for 211/211 slots
 - [x] 2.5 One command producing a full fixture for any recent local slot: `cargo run --release -p ledger-dump` (newest certified slot, or `--slot S`); verifies both certs and the block_id before writing a self-contained `block_<S>.json`
-- [ ] 2.6 (Later) Multi-validator local cluster, so bitmaps have more than one bit and ranking is exercised
+- [ ] 2.6 Multi-validator local cluster: moved to 7.1
 
 ## Phase 3 — inclusion
 - [x] 3.1 Shreds → FEC set Merkle root (`alpenglow_lc::shred`, done with 2.4)
@@ -41,14 +41,30 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 - [x] 4.4 `SolanaTx.sol` library: decode signers / instructions on the destination chain. Legacy + v0, bounded counts; parses the real memo transfer exactly
 - [ ] 4.5 Foundry tests with real proof fixtures, gas recorded. 19 tests pass on the real proven memo transfer (stand-in verifier). Submit 105,825 gas on anvil without the verifier (~+270k for Groth16). **Left: a real Groth16 fixture** (blocked on 4.2)
 
-## Phase 5 — relayer
-- [ ] 5.1 `relayer`: tx signature → fetch → prove → submit, with destination as a plug-in (EVM first)
+## Phase 5 — the Huginn TUI (in `hugin-evm`, binary `huginn-evm`)
+One screen that runs the whole flow step by step: each step shows its status, time, the exact command or call it ran, and its output. Every step is also a plain subcommand.
+- [ ] 5.1 TUI shell: step list, detail/log panel, settings bar (memo, proof mode, source), keys (run all, run one, change mode, edit memo, quit)
+- [ ] 5.2 Solana steps: doctor (tools found?) → send memo → wait finalized → fetch certificate + shreds → prove (mock / compressed / groth16)
+- [ ] 5.3 EVM steps: start anvil → deploy → submit → `isVerified` → forged proof rejected
+- [ ] 5.4 The same steps as subcommands (`huginn-evm doctor|send|fetch|prove|deploy|submit|check`), for scripts and CI
+- [ ] 5.5 `docs/demo.md`: exact steps for the video, and what you should see
 
-## Phase 6 — demos
-- [ ] 6.1 Cross-chain ping (Memo)
-- [ ] 6.2 Solana key controlling a contract on Base
-- [ ] 6.3 Forged proof rejected
-- [ ] 6.4 One-pager + video
+## Phase 6 — data sources anyone can plug in
+- [ ] 6.1 `BlockSource` interface in huginn; `ledger-dump` becomes the **local-ledger** adapter (also any Agave node's ledger: devnet/mainnet operators)
+- [ ] 6.2 **Yellowstone gRPC** (Triton, Helius, QuickNode, …): run the open-source plugin on our local validator, record what it exposes (shreds? footer certs?), build the adapter if possible
+- [ ] 6.3 **Files** adapter (offline, tests) and source choice in the TUI
+- [ ] 6.4 (Optional, needs access) Jito ShredStream, or a live provider token
 
-## Phase 7 — Layer 2 research note
-- [ ] 7.1 Proving execution/state: bond vs lattice hash vs SIMD
+## Phase 7 — more real testing
+- [ ] 7.1 Multi-validator local cluster (2–3 validators): real multi-signer certificates and bitmaps (was 2.6)
+- [ ] 7.2 Groth16 proof verified by SP1's real Solidity verifier on anvil; real gas (needs 4.2)
+- [ ] 7.3 Base Sepolia: deploy against Succinct's verifier, submit a real proof. **You:** test wallet + faucet ETH in `.env`
+- [ ] 7.4 Example `SolanaControlled.sol`: a contract on Base that only acts on transactions signed by a chosen Solana key
+
+## Phase 8 — publish and record
+- [ ] 8.1 Push `huginn`; create the `hugin-evm` GitHub repo; relayer switches to the git dependency. **You:** approve
+- [ ] 8.2 Final full TUI run, docs refreshed (`codebase.md` for both repos)
+- [ ] 8.3 **You:** video; one-pager
+
+## Phase 9 — Layer 2 research note
+- [ ] 9.1 Proving execution/state: bond vs lattice hash vs SIMD
