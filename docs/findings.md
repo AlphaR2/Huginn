@@ -161,6 +161,9 @@ Yellowstone gRPC is what Triton ("Dragon's Mouth"), Helius, QuickNode and others
 
   A provider-only user can prove "block X is final" from Yellowstone alone. Proving "transaction T is in block X" also needs a shred source.
 
+### Program key changes with the code (2026-11-04)
+- After the footer parser was added to `alpenglow-core`, the program key went from `0x000482e7…5fc1b` to `0x00509a2b…ffc98b0`. **Any change to the program or its dependencies gives a new key**, and every destination contract pins the key it trusts. So releases must be deliberate: deploy a new client, or point apps to it. `hugin-evm/.env.example` follows the current key; the TUI deploys with the key of the proof it just made.
+
 ### Certificates straight from shreds (item 6.5, 2026-11-04)
 - The footer marker's data is Agave v4.4.0's `VersionedBlockFooter` (wincode, `entry/src/block_component.rs`):
   - `tag u8 = 1 | bank_hash 32 | producer_time_nanos u64 | user_agent (u8 len + bytes)`;

@@ -45,14 +45,14 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 One screen that runs the whole flow step by step: each step shows its status, time, the exact command or call it ran, and its output. Every step is also a plain subcommand.
 - [x] 5.1 TUI shell: step list, detail/log panel, settings bar (memo, proof mode, source), keys (run all, run one, change mode, edit memo, quit). `hugin-evm/app/src/tui.rs` (ratatui); a render test prints the screen as text
 - [x] 5.2 Solana steps: doctor (tools found?) → send memo → wait finalized → fetch certificate + shreds → prove (mock / compressed / groth16). `app/src/steps.rs`; works on fresh transactions
-- [x] 5.3 EVM steps: start anvil → deploy → submit → `isVerified` → forged proof rejected (`InvalidProof`). All 10 steps in ~8 s with mock proofs
+- [x] 5.3 EVM steps: start anvil → deploy → submit → `isVerified` → Solana-controlled greeter → forged proof rejected (`InvalidProof`). All 12 steps in ~10 s with mock proofs; also run end to end with a real 299 s STARK
 - [x] 5.4 The same steps as subcommands: `huginn-evm run [steps…]`, state kept in `proofs/state.json` so steps run one at a time
 - [x] 5.5 `hugin-evm/docs/demo.md`: exact steps for the video, and what you should see
 
 ## Phase 6 — data sources anyone can plug in
 - [ ] 6.1 `BlockSource` interface in huginn; `ledger-dump` becomes the **local-ledger** adapter (also any Agave node's ledger: devnet/mainnet operators)
 - [ ] 6.2 **Yellowstone gRPC** (Triton, Helius, QuickNode, …). **Checked:** it streams Alpenglow footer certificates (same fields as footer-dump) but **no shreds**, so it's a certificate source. Left: the adapter, tested against the plugin on our local validator
-- [ ] 6.3 **Files** adapter (offline, tests) and source choice in the TUI
+- [ ] 6.3 **Files** adapter (offline, tests) and source choice in the TUI. **TUI part done:** `s` switches certificates between shreds and plugin
 - [ ] 6.4 Shred sources beyond a ledger: Jito ShredStream (needs Jito access), or a repair-protocol client (asks gossip peers for shreds; no provider needed)
 - [x] 6.5 Read certificates straight from the next block's footer shreds, so a shred source alone is enough (no plugin). `block::parse_footer`; `ledger-dump --certs shreds` (default) equals `--certs plugin` on 58/58 live slots
 
@@ -60,7 +60,7 @@ One screen that runs the whole flow step by step: each step shows its status, ti
 - [ ] 7.1 Multi-validator local cluster (2–3 validators): real multi-signer certificates and bitmaps (was 2.6)
 - [ ] 7.2 Groth16 proof verified by SP1's real Solidity verifier on anvil; real gas (needs 4.2)
 - [ ] 7.3 Base Sepolia: deploy against Succinct's verifier, submit a real proof. **You:** test wallet + faucet ETH in `.env`
-- [ ] 7.4 Example `SolanaControlled.sol`: a contract on Base that only acts on transactions signed by a chosen Solana key
+- [x] 7.4 Example `SolanaControlled.sol`: a contract on Base that only acts on transactions signed by a chosen Solana key. `SolanaControlled` + `SolanaGreeter` (7 tests), and TUI steps 10–11: a live memo changes the greeting
 
 ## Phase 8 — publish and record
 - [ ] 8.1 Push `huginn`; create the `hugin-evm` GitHub repo; relayer switches to the git dependency. **You:** approve
