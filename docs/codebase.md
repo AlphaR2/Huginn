@@ -113,10 +113,11 @@ A leader writes the block as a sequence of **components**, each split across con
   - **marker**: header (parent slot and block_id), footer (bank hash and finality cert), update-parent, or genesis cert.
 - **`Reader`** is a tiny bounds-checked cursor; every read returns `None` instead of panicking. `compact_u16` reads Solana's 1–3-byte lengths and rejects non-canonical encodings.
 - **`find_transaction`** finds a transaction by its first signature (its id).
+- **`parse_footer`** reads the footer marker. The layout is Agave's `BlockFooterV1`: bank hash, producer time, user agent, then an optional **finalization certificate** (slot, block_id, aggregate signature and bitmap, plus an optional notar aggregate on the slow path). **Block S's footer certifies its parent**, so S's own certificate is in its child's footer. That means shreds alone are enough to prove finality, with no plugin and no provider.
 
 Real layout seen locally: **header → entries → footer → one tick entry**, with each component padded to whole FEC sets. That padding is why tiny blocks still have 3–4 FEC sets.
 
-*Tests:* `tests/block_contents.rs`, which finds our real memo transfer byte-for-byte equal to RPC's copy.
+*Tests:* `tests/block_contents.rs`. It finds our real memo transfer byte-for-byte equal to RPC's copy, and checks that each footer's certificate equals the plugin's copy byte for byte.
 
 ### `src/tx.rs`: the transaction format
 Parses **legacy and v0** transactions with no Solana crates:
@@ -201,6 +202,7 @@ A CLI (`cargo run -p fetch -- <command> --cluster local|devnet|mainnet`):
 ### `crates/ledger-dump`: blocks from the ledger
 Reads raw shreds straight out of the validator's RocksDB database, read-only, so it's safe while the validator runs. Run it as `cargo run --release -p ledger-dump [-- --slot S | --range]`. It:
 - defaults to the newest certified slot;
+- takes the certificates **from the shreds** (`--certs shreds`, the default): S's from its child block's footer, the parent's from S's own footer. `--certs plugin` reads footer-dump's output instead; both give identical fixtures (checked on 58 consecutive slots);
 - verifies both certificates and rebuilds the block_id;
 - **only then** writes a self-contained `fixtures/local/block_<S>.json`, holding the epoch, shred version, validator set, certs for S and its parent, and the data shreds.
 

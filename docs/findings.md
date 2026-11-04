@@ -161,6 +161,16 @@ Yellowstone gRPC is what Triton ("Dragon's Mouth"), Helius, QuickNode and others
 
   A provider-only user can prove "block X is final" from Yellowstone alone. Proving "transaction T is in block X" also needs a shred source.
 
+### Certificates straight from shreds (item 6.5, 2026-11-04)
+- The footer marker's data is Agave v4.4.0's `VersionedBlockFooter` (wincode, `entry/src/block_component.rs`):
+  - `tag u8 = 1 | bank_hash 32 | producer_time_nanos u64 | user_agent (u8 len + bytes)`;
+  - then `Option<BlockFinalizationCert> | Option<SkipRewardCert> | Option<NotarRewardCert>`, with each Option a u8 tag;
+  - a cert is `slot u64 | block_id 32 | VotesAggregate | Option<VotesAggregate>`;
+  - a `VotesAggregate` is `signature 96 (compressed) | bitmap (u16 len + bytes)`.
+- **Block S's footer carries the certificate for S's parent.** S's own certificate is in its child's footer (usually S+1).
+- Checked on two committed fixtures (byte for byte against the plugin), and with `ledger-dump --certs shreds` vs `--certs plugin` on **58 consecutive live slots: identical fixtures**.
+- Consequence: **any shred source is a complete data source.** It gives the certificate (from the child's footer) and the inclusion data (from the block's shreds). The footer-dump plugin and Yellowstone become optional.
+
 ### EVM destination (items 4.3–4.5, 2026-11-04, repo `hugin-evm`)
 - Destinations are separate repos that depend on `huginn-prover`. `hugin-evm`'s relayer builds through that dependency and gets the same program vkey (`0x000482e7…5fc1b`).
 - Foundry 1.9.0, solc 0.8.28: **19 tests pass** on the real public values of the proven memo transfer, with a stand-in verifier that binds a proof to (vkey, public values).

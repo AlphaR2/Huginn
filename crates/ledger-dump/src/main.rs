@@ -6,11 +6,16 @@
 //!
 //! The fixture holds everything a verifier needs, so a test can check the whole chain
 //! offline: the epoch's validator set and shred version, the footer certificates for the
-//! slot and its parent (from the footer-dump plugin), and the slot's data shreds.
+//! slot and its parent, and the slot's data shreds.
+//!
+//! Certificates come from the shreds themselves by default (`--certs shreds`): block S's
+//! footer carries the certificate that finalized its parent, so S's own certificate is in
+//! its child's footer. `--certs plugin` reads them from the footer-dump plugin instead.
 //! Nothing is written unless the certificates verify and the shreds rebuild the
 //! certified block_id.
 
 use {
+    alpenglow_core::block::{self, Component, Marker},
     alpenglow_lc::{
         cert::{verify_footer, FooterCert},
         shred::{self, Kind, Shred},
@@ -38,7 +43,11 @@ struct Cli {
     /// Only print the slot range the ledger still holds.
     #[arg(long)]
     range: bool,
-    /// footer-dump plugin output, used to find the certificates.
+    /// Where certificates come from: `shreds` (the next block's footer, in the ledger) or
+    /// `plugin` (footer-dump's output, `--footers`).
+    #[arg(long, default_value = "shreds")]
+    certs: String,
+    /// footer-dump plugin output, for `--certs plugin`.
     #[arg(long, default_value = "fixtures/local/footers.jsonl")]
     footers: PathBuf,
     /// Where `cluster_info.json` and `validator_set_<epoch>.json` live (from `fetch`).
@@ -65,11 +74,17 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let raw = raw_certs(&cli.footers)?;
+    let from_shreds = match cli.certs.as_str() {
+        "shreds" => true,
+        "plugin" => false,
+        other => bail!("--certs is shreds or plugin, not {other}"),
+    };
+    let raw = if from_shreds { Vec::new() } else { raw_certs(&cli.footers)? };
     let certs = raw.iter().map(|v| serde_json::from_value(v.clone())).collect::<Result<Vec<FooterCert>, _>>()?;
     let slot = match cli.slot {
         Some(s) => s,
         // Newest certified block that is still in the ledger.
+        None if from_shreds => newest_certified_from_shreds(&db, first, last)?,
         None => certs
             .iter()
             .rev()
@@ -111,9 +126,18 @@ fn main() -> Result<()> {
         bail!("{} holds epoch {}, slot {slot} is in epoch {epoch}", set_path.display(), set.epoch);
     }
 
-    let find = |s: u64| certs.iter().position(|c| c.slot == s).with_context(|| format!("no footer cert for slot {s}"));
-    let (i, pi) = (find(slot)?, find(parent_slot)?);
-    let (cert, parent_cert) = (&certs[i], &certs[pi]);
+    let (raw_cert, raw_parent_cert) = if from_shreds {
+        // The parent's certificate is in this block's footer; ours is in our child's.
+        let parent = footer_cert(&data)?.filter(|c| c["slot"] == parent_slot).with_context(|| format!("slot {slot}'s footer has no cert for its parent {parent_slot}"))?;
+        let own = child_cert(&db, slot, last)?;
+        (own, parent)
+    } else {
+        let find = |s: u64| certs.iter().position(|c| c.slot == s).with_context(|| format!("no footer cert for slot {s}"));
+        (raw[find(slot)?].clone(), raw[find(parent_slot)?].clone())
+    };
+    let cert: FooterCert = serde_json::from_value(raw_cert.clone())?;
+    let parent_cert: FooterCert = serde_json::from_value(raw_parent_cert.clone())?;
+    let (cert, parent_cert) = (&cert, &parent_cert);
     // A parent in an earlier epoch would need that epoch's set too; not handled yet.
     if parent_slot / cli.slots_per_epoch != epoch {
         bail!("parent {parent_slot} is in a different epoch than {slot}");
@@ -128,7 +152,7 @@ fn main() -> Result<()> {
         code.len(),
         roots.len()
     );
-    println!("  certs for {slot} and {parent_slot} verify (shred version {shred_version})");
+    println!("  certs for {slot} and {parent_slot} verify (shred version {shred_version}, from {})", if from_shreds { "the shreds' footers" } else { "the plugin" });
     println!("  computed block_id  {}", hex::encode(computed));
     println!("  certified block_id {}", hex::encode(cert.block_id));
     if computed != cert.block_id {
@@ -142,8 +166,9 @@ fn main() -> Result<()> {
         "epoch": epoch,
         "shred_version": shred_version,
         "validator_set": set_json["validator_set"],
-        "block_final_cert": raw[i],
-        "parent_block_final_cert": raw[pi],
+        "cert_source": cli.certs,
+        "block_final_cert": raw_cert,
+        "parent_block_final_cert": raw_parent_cert,
         // Coding shreds aren't needed to rebuild the block_id (checked above, not stored).
         "data_shreds": data.iter().map(hex::encode).collect::<Vec<_>>(),
     });
@@ -178,6 +203,55 @@ fn read_slot(db: &DB, column: &str, slot: u64) -> Result<Vec<Vec<u8>>> {
         out.push(v.to_vec());
     }
     Ok(out)
+}
+
+/// The finalization certificate in a block's footer, in the plugin's JSON shape (so both
+/// sources feed the same checks and the same fixture format). `None` if the block has no
+/// footer yet or the footer carries no certificate.
+fn footer_cert(data: &[Vec<u8>]) -> Result<Option<Value>> {
+    let shreds = data.iter().map(|b| Shred::parse(b)).collect::<Result<Vec<_>, _>>()?;
+    let Ok(components) = block::deshred(&shreds) else { return Ok(None) };
+    for c in &components {
+        if let Component::Marker(Marker::Footer(bytes)) = block::parse_component(c)? {
+            let Some(cert) = block::parse_footer(bytes)?.final_cert else { return Ok(None) };
+            let agg = |a: &alpenglow_core::proof::Aggregate| json!({ "signature": hex::encode(&a.signature), "bitmap": hex::encode(&a.bitmap) });
+            return Ok(Some(json!({
+                "slot": cert.slot,
+                "block_id": hex::encode(cert.block_id),
+                "final_aggregate": agg(&cert.final_aggregate),
+                "notar_aggregate": cert.notar_aggregate.as_ref().map(agg),
+            })));
+        }
+    }
+    Ok(None)
+}
+
+/// The certificate for `slot`, from the footer of the first later block that names it as
+/// parent. Usually slot + 1; skipped slots push it further.
+fn child_cert(db: &DB, slot: u64, last: u64) -> Result<Value> {
+    for child in slot + 1..=last.min(slot + 64) {
+        let data = read_slot(db, "data_shred", child)?;
+        let Some(first) = data.first() else { continue };
+        if Shred::parse(first)?.parent_slot() != Some(slot) {
+            continue;
+        }
+        return footer_cert(&data)?
+            .filter(|c| c["slot"] == slot)
+            .with_context(|| format!("child {child}'s footer is not written yet or has no cert for {slot}"));
+    }
+    bail!("no child block of {slot} in the ledger yet: it isn't finalized, or wait a slot")
+}
+
+/// The parent of the newest block whose footer is in the ledger: the newest slot with a
+/// certificate we can read.
+fn newest_certified_from_shreds(db: &DB, first: u64, last: u64) -> Result<u64> {
+    for s in (first..=last).rev().take(64) {
+        let data = read_slot(db, "data_shred", s)?;
+        if let Some(c) = footer_cert(&data)? {
+            return c["slot"].as_u64().context("slot");
+        }
+    }
+    bail!("no footer with a certificate in the last 64 slots")
 }
 
 /// Every non-null `block_final_cert` in the plugin's output, as written.

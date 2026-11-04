@@ -7,6 +7,7 @@ version.workspace = true
 publish = false
 
 [dependencies]
+alpenglow-core = { path = "../alpenglow-core" }
 alpenglow-lc = { path = "../alpenglow-lc" }
 anyhow.workspace = true
 clap = { version = "4", features = ["derive"] }

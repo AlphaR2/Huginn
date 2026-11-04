@@ -99,3 +99,41 @@ fn print_component_layout() {
         println!("{f}: {} components {:?}\n  ends at shreds {:?}", summary.len(), summary, ends);
     }
 }
+
+/// Item 6.5: the footer inside the shreds carries the same certificate the footer-dump
+/// plugin captured, byte for byte. So shreds alone are enough to prove finality.
+#[test]
+fn footer_in_shreds_equals_the_plugins_certificate() {
+    for file in ["block_44000.json", "block_46718.json"] {
+        let b = json(file);
+        let raw: Vec<Vec<u8>> = b["data_shreds"].as_array().unwrap().iter().map(hex).collect();
+        let shreds: Vec<Shred> = raw.iter().map(|s| Shred::parse(s).unwrap()).collect();
+        let bytes = block::deshred(&shreds).unwrap();
+        let footers: Vec<block::Footer> = bytes
+            .iter()
+            .filter_map(|c| match block::parse_component(c).unwrap() {
+                Component::Marker(Marker::Footer(data)) => Some(block::parse_footer(data).unwrap()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(footers.len(), 1, "{file}: one footer per block");
+        let cert = footers[0].final_cert.as_ref().expect("footer carries a finalization cert");
+
+        // Block S's footer finalizes its parent: the cert ledger-dump took from the plugin.
+        let plugin = &b["parent_block_final_cert"];
+        assert_eq!(cert.slot, plugin["slot"].as_u64().unwrap(), "{file}");
+        assert_eq!(cert.block_id.to_vec(), hex(&plugin["block_id"]), "{file}");
+        assert_eq!(cert.final_aggregate.signature, hex(&plugin["final_aggregate"]["signature"]), "{file}");
+        assert_eq!(cert.final_aggregate.bitmap, hex(&plugin["final_aggregate"]["bitmap"]), "{file}");
+        assert_eq!(cert.notar_aggregate.is_some(), !plugin["notar_aggregate"].is_null(), "{file}");
+    }
+}
+
+#[test]
+fn footer_parser_rejects_garbage() {
+    assert!(block::parse_footer(&[]).is_err());
+    assert!(block::parse_footer(&[2]).is_err(), "unknown footer version");
+    let mut short = vec![1u8];
+    short.extend_from_slice(&[0; 32 + 8]);
+    assert!(block::parse_footer(&short).is_err(), "no user agent length");
+}

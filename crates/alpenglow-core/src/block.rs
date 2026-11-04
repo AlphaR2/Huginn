@@ -13,6 +13,7 @@
 //! `ledger/src/shredder.rs::deshred`.
 
 use crate::{
+    proof::Aggregate,
     shred::{Hash, Kind, Shred},
     tx::{self, Transaction},
 };
@@ -198,6 +199,70 @@ fn parse_marker(version: u16, variant: u8, data: &[u8]) -> Result<Marker<'_>, Er
         (1, 3) => Ok(Marker::GenesisCertificate(data)),
         _ => Err(Error::UnknownMarker(version, variant)),
     }
+}
+
+/// The Alpenglow block footer (`solana_entry::block_component::BlockFooterV1`, wincode).
+/// Its `final_cert` finalizes an *earlier* block, so certificates can be read straight from
+/// shreds, without a plugin or a provider.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Footer {
+    pub bank_hash: Hash,
+    pub producer_time_nanos: u64,
+    pub user_agent: Vec<u8>,
+    pub final_cert: Option<FooterCert>,
+}
+
+/// `BlockFinalizationCert`: fast path = `final_aggregate` alone (on the block), slow path =
+/// `final_aggregate` (on the slot) + `notar_aggregate` (on the block).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FooterCert {
+    pub slot: u64,
+    pub block_id: Hash,
+    pub final_aggregate: Aggregate,
+    pub notar_aggregate: Option<Aggregate>,
+}
+
+/// Parses a footer marker's data:
+///
+///   tag u8 (=1) | bank_hash 32 | producer_time_nanos u64 | user_agent (u8 len + bytes)
+///   | Option<cert> | Option<skip reward cert> | Option<notar reward cert>
+///   cert      = slot u64 | block_id 32 | aggregate | Option<aggregate>
+///   aggregate = compressed signature 96 | bitmap (u16 len + bytes)
+///
+/// Options are a u8 tag (0 none, 1 some). The reward certificates aren't needed and are
+/// left unread.
+pub fn parse_footer(data: &[u8]) -> Result<Footer, Error> {
+    let mut r = Reader::new(data);
+    let bad = |r: &Reader| Error::Malformed(r.pos);
+    let aggregate = |r: &mut Reader| -> Option<Aggregate> {
+        let signature = r.take(96)?.to_vec();
+        let len = r.u16()? as usize;
+        Some(Aggregate { signature, bitmap: r.take(len)?.to_vec() })
+    };
+    let option = |r: &mut Reader| -> Option<bool> {
+        match r.u8()? {
+            0 => Some(false),
+            1 => Some(true),
+            _ => None,
+        }
+    };
+    if r.u8() != Some(1) {
+        return Err(Error::UnknownMarker(1, 0));
+    }
+    let bank_hash = r.hash().ok_or_else(|| bad(&r))?;
+    let producer_time_nanos = r.u64().ok_or_else(|| bad(&r))?;
+    let ua_len = r.u8().ok_or_else(|| bad(&r))? as usize;
+    let user_agent = r.take(ua_len).ok_or_else(|| bad(&r))?.to_vec();
+    let final_cert = if option(&mut r).ok_or_else(|| bad(&r))? {
+        let slot = r.u64().ok_or_else(|| bad(&r))?;
+        let block_id = r.hash().ok_or_else(|| bad(&r))?;
+        let final_aggregate = aggregate(&mut r).ok_or_else(|| bad(&r))?;
+        let notar_aggregate = if option(&mut r).ok_or_else(|| bad(&r))? { Some(aggregate(&mut r).ok_or_else(|| bad(&r))?) } else { None };
+        Some(FooterCert { slot, block_id, final_aggregate, notar_aggregate })
+    } else {
+        None
+    };
+    Ok(Footer { bank_hash, producer_time_nanos, user_agent, final_cert })
 }
 
 /// Finds a transaction by its first signature (the transaction id).

@@ -54,7 +54,7 @@ One screen that runs the whole flow step by step: each step shows its status, ti
 - [ ] 6.2 **Yellowstone gRPC** (Triton, Helius, QuickNode, …). **Checked:** it streams Alpenglow footer certificates (same fields as footer-dump) but **no shreds**, so it's a certificate source. Left: the adapter, tested against the plugin on our local validator
 - [ ] 6.3 **Files** adapter (offline, tests) and source choice in the TUI
 - [ ] 6.4 Shred sources beyond a ledger: Jito ShredStream (needs Jito access), or a repair-protocol client (asks gossip peers for shreds; no provider needed)
-- [ ] 6.5 Read certificates straight from the next block's footer shreds, so a shred source alone is enough (no plugin)
+- [x] 6.5 Read certificates straight from the next block's footer shreds, so a shred source alone is enough (no plugin). `block::parse_footer`; `ledger-dump --certs shreds` (default) equals `--certs plugin` on 58/58 live slots
 
 ## Phase 7 — more real testing
 - [ ] 7.1 Multi-validator local cluster (2–3 validators): real multi-signer certificates and bitmaps (was 2.6)
