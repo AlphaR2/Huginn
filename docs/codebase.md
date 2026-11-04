@@ -47,7 +47,7 @@ A rule that runs through the whole repo: **`alpenglow-core` never trusts itself.
 4. `crates/alpenglow-core/src/proof.rs`: how the pieces combine into the three statements we prove.
 5. `crates/alpenglow-core/tests/proof.rs`: every attack we refuse, one test each.
 6. `zk/program/src/main.rs`: the 20 lines that run all of the above in SP1.
-7. Then the tools, in data-flow order: `plugins/footer-dump` → `crates/fetch` → `crates/ledger-dump` → `zk/prover`.
+7. Then the tools, in data-flow order: `crates/fetch` → `crates/ledger-dump` → `zk/prover` (and `plugins/footer-dump`, now optional).
 8. `crates/alpenglow-lc`, the Agave-based reference, when you want to see *why* we believe `alpenglow-core` is right.
 
 ---
@@ -199,14 +199,39 @@ A CLI (`cargo run -p fetch -- <command> --cluster local|devnet|mainnet`):
 - `cluster-info`: the shred version (the most common one across nodes).
 - `validator-set`: reads every vote account, parses its BLS key (`src/vote_account.rs` knows the byte offsets in VoteStateV4), ranks them, and writes `validator_set_<epoch>.json` with the **commitment**. RPC only serves *current* stakes, so this must run during each epoch you want fixtures for.
 
-### `crates/ledger-dump`: blocks from the ledger
-Reads raw shreds straight out of the validator's RocksDB database, read-only, so it's safe while the validator runs. Run it as `cargo run --release -p ledger-dump [-- --slot S | --range]`. It:
-- defaults to the newest certified slot;
-- takes the certificates **from the shreds** (`--certs shreds`, the default): S's from its child block's footer, the parent's from S's own footer. `--certs plugin` reads footer-dump's output instead; both give identical fixtures (checked on 58 consecutive slots);
-- verifies both certificates and rebuilds the block_id;
-- **only then** writes a self-contained `fixtures/local/block_<S>.json`, holding the epoch, shred version, validator set, certs for S and its parent, and the data shreds.
+### `crates/ledger-dump`: block fixtures from any shred source
+Since block N+1's footer holds the certificate for block N, **shreds are all Huginn needs**. So this crate is built around one small interface (`src/lib.rs`):
 
-It uses the exact RocksDB version Agave 4.4.0 uses. The `bindgen-runtime` feature lets it find macOS's libclang without setup.
+```rust
+trait ShredSource {
+    fn range(&self) -> Result<(u64, u64)>;              // which slots it has
+    fn data_shreds(&self, slot) -> Result<Vec<Vec<u8>>>; // the block's shreds
+    fn code_shreds(&self, slot) -> Result<Vec<Vec<u8>>>; // optional extra check
+}
+```
+
+Two sources today:
+- **`Ledger`**: an Agave ledger's RocksDB, read-only, so it's safe while the validator runs. That's your local validator, or any node's ledger on devnet or mainnet. It uses the exact RocksDB version Agave 4.4.0 uses.
+- **`ShredFiles`**: a directory of `shreds_<slot>.json` files, written by `export`. Use it offline and in tests.
+
+A Jito ShredStream receiver or a repair-protocol client would be a third `impl ShredSource`. Nothing else would change.
+
+**`build_fixture(source, slot, sets, certs)`** is the same for every source. It:
+- takes the certificates from the child block's footer (`Certs::Shreds`, the default) or from footer-dump (`Certs::Plugin`);
+- checks the coding shreds against their FEC roots, the shred version, both certificates against the epoch's validator set, and the rebuilt block_id;
+- returns a fixture **only if every check passes**.
+
+The CLI (`src/main.rs`):
+
+```bash
+cargo run --release -p ledger-dump                               # newest certified slot, from .local-ledger
+cargo run --release -p ledger-dump -- --slot S                   # a given slot
+cargo run --release -p ledger-dump -- --export-shreds S..S+1 --out dir   # save raw shreds
+cargo run --release -p ledger-dump -- --shreds dir --slot S      # build from saved shreds, offline
+cargo run --release -p ledger-dump -- --certs plugin             # certificates from footer-dump
+```
+
+*Tests:* `tests/shred_files.rs` builds a fixture from two committed shred files (`fixtures/local/shreds/`), with no ledger, plugin or RPC. It then proves the memo in it final and included.
 
 ---
 
@@ -267,6 +292,7 @@ The proof output's layout (`TxOutput::encode`) is the contract between huginn an
 | `local/block_44000.json` | A whole empty block: set, certs, 96 data shreds | `ledger-dump --slot 44000` |
 | `local/block_46718.json` | The block holding our memo transfer: 128 data shreds, 4 FEC sets | `ledger-dump --slot 46718` |
 | `local/tx_46718.json` | RPC's copy of that transaction, the independent reference for the shred parser | `getTransaction` |
+| `local/shreds/` | Raw shreds of slots 133389–133390: a block with a memo transfer, plus its child (whose footer certifies it). Enough to prove the memo with nothing else | `ledger-dump --export-shreds` |
 | `proofs/<run>.<mode>.json` | A real proof's summary: program key, public values, timings (the `.bin` proof itself isn't committed) | `zk/prover --prove` |
 
 ---

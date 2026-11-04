@@ -1,6 +1,6 @@
 [package]
 name = "ledger-dump"
-description = "Reads raw shreds for one slot from a local Agave ledger (RocksDB, read-only) and writes a block fixture."
+description = "Block fixtures from any shred source (an Agave ledger, or shred files): certificates from the next block's footer, everything checked before writing."
 edition.workspace = true
 license.workspace = true
 version.workspace = true
@@ -17,3 +17,6 @@ serde_json.workspace = true
 # features, so we can read what the validator wrote. `bindgen-runtime` loads libclang at
 # build time via its own search (incl. xcode-select), so macOS needs no LIBCLANG_PATH.
 rocksdb = { version = "=0.24.0", default-features = false, features = ["lz4", "bindgen-runtime"] }
+
+[dev-dependencies]
+alpenglow-core = { path = "../alpenglow-core", features = ["fixture"] }

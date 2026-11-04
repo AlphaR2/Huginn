@@ -50,14 +50,14 @@ One screen that runs the whole flow step by step: each step shows its status, ti
 - [x] 5.5 `hugin-evm/docs/demo.md`: exact steps for the video, and what you should see
 
 ## Phase 6 — data sources anyone can plug in
-- [ ] 6.1 `BlockSource` interface in huginn; `ledger-dump` becomes the **local-ledger** adapter (also any Agave node's ledger: devnet/mainnet operators)
+- [x] 6.1 Source interface in huginn: since shreds carry the certificates, it is `ShredSource` ("the shreds of slot S"). `ledger-dump` is now a library: `Ledger` adapter (local, or any Agave node's ledger) + one shared `build_fixture`
 - [ ] 6.2 **Yellowstone gRPC** (Triton, Helius, QuickNode, …). **Checked:** it streams Alpenglow footer certificates (same fields as footer-dump) but **no shreds**, so it's a certificate source. Left: the adapter, tested against the plugin on our local validator
-- [ ] 6.3 **Files** adapter (offline, tests) and source choice in the TUI. **TUI part done:** `s` switches certificates between shreds and plugin
+- [x] 6.3 **Files** adapter: `ShredFiles` + `--export-shreds`; two committed shred files prove a memo with no ledger, plugin or RPC (`tests/shred_files.rs`). TUI: `s` switches certificates between shreds and plugin
 - [ ] 6.4 Shred sources beyond a ledger: Jito ShredStream (needs Jito access), or a repair-protocol client (asks gossip peers for shreds; no provider needed)
 - [x] 6.5 Read certificates straight from the next block's footer shreds, so a shred source alone is enough (no plugin). `block::parse_footer`; `ledger-dump --certs shreds` (default) equals `--certs plugin` on 58/58 live slots
 
 ## Phase 7 — more real testing
-- [ ] 7.1 Multi-validator local cluster (2–3 validators): real multi-signer certificates and bitmaps (was 2.6)
+- [ ] 7.1 Multi-validator local cluster (2–3 validators): real multi-signer certificates and bitmaps (was 2.6). **Blocked:** needs `agave-validator` + `solana-genesis`, which Anza no longer ships prebuilt; build from Agave v4.4.0 source (**you**, the sandbox can't download crates)
 - [ ] 7.2 Groth16 proof verified by SP1's real Solidity verifier on anvil; real gas (needs 4.2)
 - [ ] 7.3 Base Sepolia: deploy against Succinct's verifier, submit a real proof. **You:** test wallet + faucet ETH in `.env`
 - [x] 7.4 Example `SolanaControlled.sol`: a contract on Base that only acts on transactions signed by a chosen Solana key. `SolanaControlled` + `SolanaGreeter` (7 tests), and TUI steps 10–11: a live memo changes the greeting
