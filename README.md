@@ -67,3 +67,4 @@ cargo test --release
 ```
 
 Pinned toolchain and crate versions are listed in `docs/findings.md`. To run the whole flow (local validator, then proof, then EVM), see [`docs/run.md`](docs/run.md).
+# Huginn
