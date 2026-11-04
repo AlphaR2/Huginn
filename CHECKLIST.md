@@ -51,9 +51,10 @@ One screen that runs the whole flow step by step: each step shows its status, ti
 
 ## Phase 6 — data sources anyone can plug in
 - [ ] 6.1 `BlockSource` interface in huginn; `ledger-dump` becomes the **local-ledger** adapter (also any Agave node's ledger: devnet/mainnet operators)
-- [ ] 6.2 **Yellowstone gRPC** (Triton, Helius, QuickNode, …): run the open-source plugin on our local validator, record what it exposes (shreds? footer certs?), build the adapter if possible
+- [ ] 6.2 **Yellowstone gRPC** (Triton, Helius, QuickNode, …). **Checked:** it streams Alpenglow footer certificates (same fields as footer-dump) but **no shreds**, so it's a certificate source. Left: the adapter, tested against the plugin on our local validator
 - [ ] 6.3 **Files** adapter (offline, tests) and source choice in the TUI
-- [ ] 6.4 (Optional, needs access) Jito ShredStream, or a live provider token
+- [ ] 6.4 Shred sources beyond a ledger: Jito ShredStream (needs Jito access), or a repair-protocol client (asks gossip peers for shreds; no provider needed)
+- [ ] 6.5 Read certificates straight from the next block's footer shreds, so a shred source alone is enough (no plugin)
 
 ## Phase 7 — more real testing
 - [ ] 7.1 Multi-validator local cluster (2–3 validators): real multi-signer certificates and bitmaps (was 2.6)

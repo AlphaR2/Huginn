@@ -142,6 +142,25 @@ verify_certificate(cert: UnverifiedCertificate, max_validators: usize, total_sta
 - **Groth16 is not done yet.** SP1 v6.10.0 wraps the compressed proof with gnark (circuit version `v6.1.0`), either in Docker (`ghcr.io/succinctlabs/sp1-gnark:v6.1.0`) or natively (feature `native-gnark`, needs Go). Both need the Groth16 circuit artifacts downloaded into `~/.sp1/circuits` (several GB). Docker Desktop is installed here but not running. Go is not installed.
 - Rough local estimate for a 1,000-validator proof: proving time grows with cycles, so ~47M cycles is ~9x this run, i.e. tens of minutes on this Mac. That's fine for testing but not for a service; the prover network (or a GPU) is the production path.
 
+### Data sources: what Yellowstone gRPC gives (item 6.2, 2026-11-04)
+Yellowstone gRPC is what Triton ("Dragon's Mouth"), Helius, QuickNode and others run. I read `yellowstone-grpc-proto/proto/geyser.proto` on master:
+- **Certificates: yes.** `SubscribeRequestFilterBlockFooter { include_certificates: true }` streams `SubscribeUpdateBlockFooter` with `block_final_cert`:
+  - `slot`;
+  - `final_aggregate`, plus `notar_aggregate` for the slow path;
+  - each aggregate has the 96-byte signature, the `block_id`, and the signer bitmap verbatim.
+
+  That's exactly what our `footer-dump` plugin captures, field for field. So any Yellowstone provider can supply **finality**.
+- **Shreds: no.** It streams accounts, transactions, entries (`hash`, `num_hashes`, tx counts) and block meta, but no shreds. `SubscribeDeshred` gives transactions rebuilt from shreds, not the shreds themselves.
+- **Consequence.** The block_id is a double Merkle root over shreds. Proving a transaction is *in* the block needs that transaction's component's shreds (plus the FEC roots). Entries alone don't give that: re-shredding would need the leader's exact batching and component boundaries, which the stream doesn't carry.
+- **So a source has two parts:**
+
+  | Part | Where it comes from |
+  |---|---|
+  | Certificate (finality) | Our footer-dump plugin, **Yellowstone** (any provider), or the footer component in the next block's shreds |
+  | Shreds (inclusion) | Any Agave node's ledger (local, or an operator's devnet/mainnet node), Jito ShredStream, or the repair protocol (ask peers for shreds by slot and index, as catching-up nodes do) |
+
+  A provider-only user can prove "block X is final" from Yellowstone alone. Proving "transaction T is in block X" also needs a shred source.
+
 ### EVM destination (items 4.3–4.5, 2026-11-04, repo `hugin-evm`)
 - Destinations are separate repos that depend on `huginn-prover`. `hugin-evm`'s relayer builds through that dependency and gets the same program vkey (`0x000482e7…5fc1b`).
 - Foundry 1.9.0, solc 0.8.28: **19 tests pass** on the real public values of the proven memo transfer, with a stand-in verifier that binds a proof to (vkey, public values).
