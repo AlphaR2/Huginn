@@ -127,3 +127,23 @@ Suggested fixes, in order of payoff: make the practice-mode card say "practice p
 - `hugin-evm/test/Adversarial.t.sol`: 8 PoCs, **not yet run**.
 - This report.
 - The differential fuzzer lives outside the repo in the session scratchpad (`.../scratchpad/difffuzz`) and can be copied in if you want it kept.
+
+## Status after the first round of fixes (2026-11-04)
+
+Added by the maintainers after the review. The Solidity PoCs now run: `forge test` in huginn-evm, 39 pass (5 Groth16 tests skipped until a real proof exists). One PoC had a test bug: `expectRevert` with a bare selector for an error that has arguments. It was fixed when the test was flipped. The Rust side: 94 tests across the huginn workspace pass (the 45 above are `alpenglow-core` alone).
+
+| # | Finding | Status |
+|---|---|---|
+| 1 | `SolanaControlled`: no ordering, expiry, deployment binding | **Fixed.** Memo is `huginn:<chain id>:<contract address>:<nonce>:<command>`; the nonce must be exactly `nonce + 1`. An empty command cancels a signed, unrelayed one (there is still no time-based expiry). PoCs flipped to `test_FIXED_*` |
+| 2 | Owner key is the root of trust | **Open.** Next: two-step ownership, sets that take effect after a delay and can be replaced before then, a multisig owner. Real fix: prove the set handover in SP1. `test_POC_*` still pass |
+| 3 | Failed transactions still command | **Documented** in `SolanaControlled`'s comment and huginn-evm's README ("Using it"). Real fix: prove success (Layer 2) |
+| 4 | One unparseable transaction blocks its component | **Open.** Next: check whether v1 transactions are live, add the v1 parser, stop parsing once the target transaction is found |
+| 5 | Replay guard keyed on the signature | **Fixed** by finding 1: the guard is the nonce inside the signed message |
+| 6 | anvil key whenever the RPC URL says localhost; key on the command line | **Fixed.** The test key is used only when the chain reports chain id 31337. Every key goes to forge through the environment (`cast send --private-key` replaced by `script/Execute.s.sol`) |
+| 7 | `verify` ignores the conflicting-block record | **Fixed.** `verify` reverts with `ConflictingBlock` too. PoC flipped |
+| 8 | Parser differences from Agave | No change needed in code. Wording on `SolanaTx` still to do |
+| UX | Practice-mode card overclaims | **Fixed.** Practice: "The flow works, but nothing was proven". STARK: checked on this machine, not on-chain. Only Groth16 says the contract checked a real proof |
+| UX | `doctor` says the plugin is needed | **Fixed** |
+| UX | Naming, one setup guide | Open |
+
+The deployment binding changed the app's order: the contracts are deployed **before** the memo is sent (the memo names the greeter's address), so the guided view has five stages (Set up, Send, Finalize, Prove, Verify).
