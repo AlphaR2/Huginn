@@ -9,7 +9,7 @@ Huginn lets a contract on another chain check, by itself, that a Solana transact
 
 Both run inside an SP1 zkVM program, which outputs one Groth16 proof with chain-neutral public values. Any chain that can verify a BN254 Groth16 proof can use it.
 
-**First target: Base.** Destinations are separate codebases that depend on the `huginn-prover` crate. The EVM one is [`hugin-evm`](https://github.com/AlphaR2/hugin-evm), which has:
+**First target: Base.** Destinations are separate codebases that depend on the `huginn-prover` crate. The EVM one is [`huginn-evm`](https://github.com/AlphaR2/huginn-evm), which has:
 - the Solidity contracts;
 - a TUI that runs the whole flow;
 - deploy and submit scripts.
@@ -67,4 +67,3 @@ cargo test --release
 ```
 
 Pinned toolchain and crate versions are listed in `docs/findings.md`. To run the whole flow (local validator, then proof, then EVM), see [`docs/run.md`](docs/run.md).
-# Huginn

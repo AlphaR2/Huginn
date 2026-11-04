@@ -1,7 +1,7 @@
 //! Huginn prover: proves "this Solana transaction is in a block finalized by this
 //! validator set" with SP1, for any destination chain.
 //!
-//! A relayer (for example `hugin-evm`) depends on this crate:
+//! A relayer (for example `huginn-evm`) depends on this crate:
 //!
 //! ```ignore
 //! let input = huginn_prover::tx_input_from_block_file("block_46718.json", "4F39ig6…")?;

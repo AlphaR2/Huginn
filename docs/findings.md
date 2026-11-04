@@ -178,7 +178,7 @@ Yellowstone gRPC is what Triton ("Dragon's Mouth"), Helius, QuickNode and others
 - **Conclusion:** STARK proofs work on this Mac. Groth16 needs a machine with ≥32 GB, or Succinct's prover network. This is only a hardware limit: every step up to the gnark wrap ran.
 
 ### Program key changes with the code (2026-11-04)
-- After the footer parser was added to `alpenglow-core`, the program key went from `0x000482e7…5fc1b` to `0x00509a2b…ffc98b0`. **Any change to the program or its dependencies gives a new key**, and every destination contract pins the key it trusts. So releases must be deliberate: deploy a new client, or point apps to it. `hugin-evm/.env.example` follows the current key; the TUI deploys with the key of the proof it just made.
+- After the footer parser was added to `alpenglow-core`, the program key went from `0x000482e7…5fc1b` to `0x00509a2b…ffc98b0`. **Any change to the program or its dependencies gives a new key**, and every destination contract pins the key it trusts. So releases must be deliberate: deploy a new client, or point apps to it. `huginn-evm/.env.example` follows the current key; the TUI deploys with the key of the proof it just made.
 
 ### Certificates straight from shreds (item 6.5, 2026-11-04)
 - The footer marker's data is Agave v4.4.0's `VersionedBlockFooter` (wincode, `entry/src/block_component.rs`):
@@ -190,8 +190,8 @@ Yellowstone gRPC is what Triton ("Dragon's Mouth"), Helius, QuickNode and others
 - Checked on two committed fixtures (byte for byte against the plugin), and with `ledger-dump --certs shreds` vs `--certs plugin` on **58 consecutive live slots: identical fixtures**.
 - Consequence: **any shred source is a complete data source.** It gives the certificate (from the child's footer) and the inclusion data (from the block's shreds). The footer-dump plugin and Yellowstone become optional.
 
-### EVM destination (items 4.3–4.5, 2026-11-04, repo `hugin-evm`)
-- Destinations are separate repos that depend on `huginn-prover`. `hugin-evm`'s relayer builds through that dependency and gets the same program vkey (`0x000482e7…5fc1b`).
+### EVM destination (items 4.3–4.5, 2026-11-04, repo `huginn-evm`)
+- Destinations are separate repos that depend on `huginn-prover`. `huginn-evm`'s relayer builds through that dependency and gets the same program vkey (`0x000482e7…5fc1b`).
 - Foundry 1.9.0, solc 0.8.28: **19 tests pass** on the real public values of the proven memo transfer, with a stand-in verifier that binds a proof to (vkey, public values).
 - Anvil, end to end: deploy (1,081,264 gas), then `submit` (**105,825 gas** including the 21k base). `isVerified(sig)` is true, and `finalizedBlock(46718)` equals the proven block_id.
 - Expected on a real chain: ~105k plus the SP1 Groth16 verifier (~270k), so ~380k per submit. To measure once a Groth16 proof exists.

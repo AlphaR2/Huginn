@@ -37,17 +37,17 @@ Workflow: Claude completes one item, explains it in depth, you ask questions unt
 ## Phase 4 — SP1 + first destination (Base)
 - [x] 4.1 SP1 program: finality + inclusion → chain-neutral public values (fixed byte layout, no EVM ABI inside the proof). `zk/program` + `TxOutput::encode` (v1, 106-byte header + tx); proving exposed as the `huginn-prover` library
 - [ ] 4.2 Execute mode, cycle count; then Groth16 proof. **Execute mode done** (see 0.10). **Real compressed STARK proof done** (278 s, verified, matches native). Groth16: circuit files + gnark image ready; STARK→shrink→wrap run, then **gnark OOM-killed in Docker** (18 GB Mac; needs ≥32 GB machine or Succinct's prover network)
-- [x] 4.3 `SolanaLightClient.sol` in the separate `hugin-evm` repo (depends on `huginn-prover`) (validator set hash per epoch, pinned SP1 verifier). Base first, same code on any EVM chain. With .env-driven deploy/submit scripts; deployed + submitted on anvil, `isVerified` true
+- [x] 4.3 `SolanaLightClient.sol` in the separate `huginn-evm` repo (depends on `huginn-prover`) (validator set hash per epoch, pinned SP1 verifier). Base first, same code on any EVM chain. With .env-driven deploy/submit scripts; deployed + submitted on anvil, `isVerified` true
 - [x] 4.4 `SolanaTx.sol` library: decode signers / instructions on the destination chain. Legacy + v0, bounded counts; parses the real memo transfer exactly
 - [ ] 4.5 Foundry tests with real proof fixtures, gas recorded. 19 tests pass on the real proven memo transfer (stand-in verifier). Submit 105,825 gas on anvil without the verifier (~+270k for Groth16). **Left: a real Groth16 fixture** (blocked on 4.2)
 
-## Phase 5 — the Huginn TUI (in `hugin-evm`, binary `huginn-evm`)
+## Phase 5 — the Huginn TUI (in `huginn-evm`, binary `huginn-evm`)
 One screen that runs the whole flow step by step: each step shows its status, time, the exact command or call it ran, and its output. Every step is also a plain subcommand.
-- [x] 5.1 TUI shell: step list, detail/log panel, settings bar (memo, proof mode, source), keys (run all, run one, change mode, edit memo, quit). `hugin-evm/app/src/tui.rs` (ratatui); a render test prints the screen as text
+- [x] 5.1 TUI shell: step list, detail/log panel, settings bar (memo, proof mode, source), keys (run all, run one, change mode, edit memo, quit). `huginn-evm/app/src/tui.rs` (ratatui); a render test prints the screen as text
 - [x] 5.2 Solana steps: doctor (tools found?) → send memo → wait finalized → fetch certificate + shreds → prove (mock / compressed / groth16). `app/src/steps.rs`; works on fresh transactions
 - [x] 5.3 EVM steps: start anvil → deploy → submit → `isVerified` → Solana-controlled greeter → forged proof rejected (`InvalidProof`). All 12 steps in ~10 s with mock proofs; also run end to end with a real 299 s STARK
 - [x] 5.4 The same steps as subcommands: `huginn-evm run [steps…]`, state kept in `proofs/state.json` so steps run one at a time
-- [x] 5.5 `hugin-evm/docs/demo.md`: exact steps for the video, and what you should see
+- [x] 5.5 `huginn-evm/docs/demo.md`: exact steps for the video, and what you should see
 
 ## Phase 6 — data sources anyone can plug in
 - [x] 6.1 Source interface in huginn: since shreds carry the certificates, it is `ShredSource` ("the shreds of slot S"). `ledger-dump` is now a library: `Ledger` adapter (local, or any Agave node's ledger) + one shared `build_fixture`
@@ -63,7 +63,7 @@ One screen that runs the whole flow step by step: each step shows its status, ti
 - [x] 7.4 Example `SolanaControlled.sol`: a contract on Base that only acts on transactions signed by a chosen Solana key. `SolanaControlled` + `SolanaGreeter` (7 tests), and TUI steps 10–11: a live memo changes the greeting
 
 ## Phase 8 — publish and record
-- [ ] 8.1 Push `huginn`; create the `hugin-evm` GitHub repo; relayer switches to the git dependency. **You:** approve
+- [ ] 8.1 Push `huginn`; create the `huginn-evm` GitHub repo; relayer switches to the git dependency. **You:** approve
 - [ ] 8.2 Final full TUI run, docs refreshed (`codebase.md` for both repos)
 - [ ] 8.3 **You:** video; one-pager
 

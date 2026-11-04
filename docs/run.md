@@ -15,7 +15,7 @@ Clone both repos next to each other:
 
 ```bash
 git clone https://github.com/AlphaR2/huginn
-git clone https://github.com/AlphaR2/hugin-evm
+git clone https://github.com/AlphaR2/huginn-evm
 ```
 
 **1. Start the local Alpenglow validator** (in `huginn`) and leave it running. Its ledger grows by a few GB a day:
@@ -32,7 +32,7 @@ cargo build --release -p ledger-dump
 cargo test --release
 ```
 
-In `hugin-evm`:
+In `huginn-evm`:
 
 ```bash
 forge install foundry-rs/forge-std --no-git
@@ -41,13 +41,13 @@ cd app
 cargo build --release
 ```
 
-**3. Run the TUI** from `hugin-evm`:
+**3. Run the TUI** from `huginn-evm`:
 
 ```bash
 ./app/target/release/huginn-evm
 ```
 
-`e` writes a message, `enter` runs it, `d` shows details, `?` shows help, and `m` switches between practice and real (STARK) proofs. See `hugin-evm/docs/demo.md`.
+`e` writes a message, `enter` runs it, `d` shows details, `?` shows help, and `m` switches between practice and real (STARK) proofs. See `huginn-evm/docs/demo.md`.
 
 The `fixtures/local` files in huginn (validator set, shred version) are for **this repo's** local chain. A fresh validator makes a new chain with its own keys. Refresh them once it's running:
 
@@ -56,7 +56,7 @@ cargo run --release -p fetch -- cluster-info --cluster local
 cargo run --release -p fetch -- validator-set --cluster local
 ```
 
-Then update `SHRED_VERSION` and `VALIDATOR_SET_HASH` in `hugin-evm/.env` to match.
+Then update `SHRED_VERSION` and `VALIDATOR_SET_HASH` in `huginn-evm/.env` to match.
 
 ---
 
@@ -127,13 +127,13 @@ groth16 proof: setup …s, prove …s, verify …s -> ../../fixtures/proofs/real
 
 ```bash
 scp root@<vps-ip>:huginn/fixtures/proofs/real-1-validator-fast.groth16.json huginn/fixtures/proofs/
-cp huginn/fixtures/proofs/real-1-validator-fast.groth16.json hugin-evm/test/fixtures/
+cp huginn/fixtures/proofs/real-1-validator-fast.groth16.json huginn-evm/test/fixtures/
 ```
 
 **2. Check it with SP1's real Solidity verifier.** This prints the real gas cost:
 
 ```bash
-cd hugin-evm
+cd huginn-evm
 forge test -vv --match-contract Groth16
 ```
 
@@ -163,11 +163,11 @@ pkill anvil
 
 ### Inside the repos
 
-Build outputs (huginn ~9.4 GB, hugin-evm ~2.4 GB):
+Build outputs (huginn ~9.4 GB, huginn-evm ~2.4 GB):
 
 ```bash
 cd huginn && cargo clean && (cd zk/prover && cargo clean) && (cd zk/program && cargo clean)
-cd ../hugin-evm && (cd app && cargo clean) && forge clean && rm -rf lib broadcast proofs/*.json
+cd ../huginn-evm && (cd app && cargo clean) && forge clean && rm -rf lib broadcast proofs/*.json
 ```
 
 The validator's ledger (5.4 GB) and the plugin's footer log (80 MB):
@@ -179,7 +179,7 @@ rm -rf huginn/.local-ledger huginn/fixtures/local/footers.jsonl
 Or remove the clones entirely, once they're pushed:
 
 ```bash
-rm -rf huginn hugin-evm
+rm -rf huginn huginn-evm
 ```
 
 ### Tools in your home folder

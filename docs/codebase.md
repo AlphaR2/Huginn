@@ -268,7 +268,7 @@ If anything fails it panics, and then no proof can exist. The `cycle-tracker` li
 
 ## 7b. Destinations live in their own repos
 
-huginn knows only Solana. Each destination chain is a **separate codebase** that depends on `huginn-prover` and has its own contracts, settings and scripts. The first one is **`hugin-evm`** (next to this repo):
+huginn knows only Solana. Each destination chain is a **separate codebase** that depends on `huginn-prover` and has its own contracts, settings and scripts. The first one is **`huginn-evm`** (next to this repo):
 - Solidity: `SolanaLightClient`, `HuginnOutput`, `SolanaTx`;
 - a relayer crate using `huginn-prover`;
 - `.env` for the chain, keys and addresses;
