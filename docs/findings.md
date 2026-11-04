@@ -161,6 +161,22 @@ Yellowstone gRPC is what Triton ("Dragon's Mouth"), Helius, QuickNode and others
 
   A provider-only user can prove "block X is final" from Yellowstone alone. Proving "transaction T is in block X" also needs a shred source.
 
+### Groth16 on this Mac: out of memory (item 4.2, 2026-11-04)
+- Circuit artifacts v6.1.0 downloaded (6.2 GB archive, `gzip -t` OK) and unpacked into `~/.sp1/circuits/groth16/v6.1.0`:
+  - `groth16_pk.bin` 5.9 GB;
+  - `groth16_circuit.bin` 2.4 GB;
+  - `constraints.json` 112 MB;
+  - `Groth16Verifier.sol` and `SP1VerifierGroth16.sol`.
+
+  Image `ghcr.io/succinctlabs/sp1-gnark:v6.1.0` pulled.
+- The real run of the memo transfer: STARK, shrink and wrap all finished (wrap done ~10 min in). Then gnark in Docker read the R1CS (20 s) and was **killed with exit 137** (`35072 = 137 << 8`, SIGKILL) while loading the proving key, with no stderr. That's the out-of-memory killer.
+- Why:
+  - the M3 Pro has 18 GB in total, and Docker's VM was allowed 13.6 GB;
+  - the prover process on the host still held its own memory;
+  - the circuit and the 5.9 GB key must both be in memory, plus the solver's working space;
+  - Succinct's guidance for local Groth16 is 16 GB minimum, 32 GB recommended.
+- **Conclusion:** STARK proofs work on this Mac. Groth16 needs a machine with ≥32 GB, or Succinct's prover network. This is only a hardware limit: every step up to the gnark wrap ran.
+
 ### Program key changes with the code (2026-11-04)
 - After the footer parser was added to `alpenglow-core`, the program key went from `0x000482e7…5fc1b` to `0x00509a2b…ffc98b0`. **Any change to the program or its dependencies gives a new key**, and every destination contract pins the key it trusts. So releases must be deliberate: deploy a new client, or point apps to it. `hugin-evm/.env.example` follows the current key; the TUI deploys with the key of the proof it just made.
 
