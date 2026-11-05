@@ -144,6 +144,6 @@ Added by the maintainers after the review. The Solidity PoCs now run: `forge tes
 | 8 | Parser differences from Agave | No change needed in code. `SolanaTx`'s comment now says unproven input reverts cleanly but means nothing. The one over-accept (a v0 lookup table loading no accounts) is now refused too |
 | UX | Practice-mode card overclaims | **Fixed.** Practice: "The flow works, but nothing was proven". STARK: checked on this machine, not on-chain. Only Groth16 says the contract checked a real proof |
 | UX | `doctor` says the plugin is needed | **Fixed** |
-| UX | Naming, one setup guide | Open |
+| UX | Naming, one setup guide | **Fixed (2026-11-05).** The local folder is now `huginn-evm`, like the repo, the crate and the CLI; the app is no longer called "the relayer". `docs/run.md` part 1 is the one setup guide (tools with install commands, then `huginn-evm run doctor` first); the READMEs and `demo.md` link to it |
 
 The deployment binding changed the app's order: the contracts are deployed **before** the memo is sent (the memo names the greeter's address), so the guided view has five stages (Set up, Send, Finalize, Prove, Verify).
