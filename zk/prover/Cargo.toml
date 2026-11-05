@@ -1,6 +1,6 @@
 [package]
 name = "huginn-prover"
-description = "Proves that a Solana transaction is in a finalized Alpenglow block (SP1). Library for relayers, plus the `huginn` CLI."
+description = "Proves that a Solana transaction is in a finalized Alpenglow block (SP1). Library for destination apps, plus the `huginn` CLI."
 version = "0.1.0"
 edition = "2021"
 publish = false

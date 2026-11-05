@@ -258,7 +258,7 @@ If anything fails it panics, and then no proof can exist. The `cycle-tracker` li
 `Cargo.toml` patches `bls12_381` and `sha2` to SP1's accelerated versions; the tags come from SP1 v6.10.0's own examples. Build with `cargo prove build`.
 
 ### `zk/prover`: the library others build on (crate `huginn-prover`)
-`build.rs` compiles the program. **`src/lib.rs`** is what a relayer for any destination chain depends on:
+`build.rs` compiles the program. **`src/lib.rs`** is what an app for any destination chain depends on:
 - `tx_input_from_block_file(block, signature)`: a `ledger-dump` block file plus a signature (base58 or hex) gives the proof input.
 - `Huginn::from_env()`: an SP1 prover. Where it runs follows SP1's env: `SP1_PROVER=cpu` (default) or `mock`.
 - `execute(&input)`: cycles, without a proof.
@@ -277,7 +277,7 @@ If anything fails it panics, and then no proof can exist. The `cycle-tracker` li
 
 huginn knows only Solana. Each destination chain is a **separate codebase** that depends on `huginn-prover` and has its own contracts, settings and scripts. The first one is **`huginn-evm`** (next to this repo):
 - Solidity: `SolanaLightClient`, `HuginnOutput`, `SolanaTx`;
-- a relayer crate using `huginn-prover`;
+- an app crate using `huginn-prover`;
 - `.env` for the chain, keys and addresses;
 - Foundry deploy and submit scripts.
 

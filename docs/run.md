@@ -9,54 +9,84 @@ Three parts:
 
 ## 1. Local
 
-Tools: Rust (`rustup`), SP1 (`sp1up`, v6.10.0), `protoc` (`brew install protobuf`), the Solana CLI (Agave 4.4, for `solana-test-validator --alpenglow`), Foundry (`foundryup`). Docker is only needed for Groth16, and only works with ≥32 GB RAM (see part 2).
+This is the one setup guide for both repos. The READMEs and `huginn-evm/docs/demo.md` point here.
 
-Clone both repos next to each other:
+### Tools
+
+Install each once. The versions are the ones Huginn is tested with.
+
+| Tool | Why | Install |
+|---|---|---|
+| Rust | everything | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| SP1 6.10.0 | proves (`cargo prove --version` must say 6.10.0) | `curl -L https://sp1up.succinct.xyz \| bash`, then `sp1up --version v6.10.0` |
+| protoc | SP1 builds | `brew install protobuf` (Ubuntu: `apt install protobuf-compiler`) |
+| Solana CLI, Agave 4.4.0 | the local Alpenglow validator, sending the memo | `sh -c "$(curl -sSfL https://release.anza.xyz/v4.4.0/install)"` |
+| Foundry | contracts, anvil | `curl -L https://foundry.paradigm.xyz \| bash`, then `foundryup` |
+| Docker | Groth16 only, and only with ≥32 GB RAM (part 2) | Docker Desktop |
+
+Open a new terminal afterwards, so the new `PATH` entries apply.
+
+### Steps
+
+**1. Clone both repos next to each other.** The app finds huginn at `../huginn`:
 
 ```bash
 git clone https://github.com/AlphaR2/huginn
 git clone https://github.com/AlphaR2/huginn-evm
 ```
 
-**1. Start the local Alpenglow validator** (in `huginn`) and leave it running. Its ledger grows by a few GB a day:
+**2. Start the local Alpenglow validator** in `huginn`, and leave it running in its own terminal. Its ledger grows by a few GB a day:
 
 ```bash
 cd huginn
 solana-test-validator --alpenglow --ledger .local-ledger
 ```
 
-**2. Build the tools**, once. In `huginn`:
+The footer-dump plugin is **not** needed: certificates are read from the shreds. Only add `--geyser-plugin-config plugins/footer-dump/config.json` if you want to compare against the plugin (`s` in the TUI).
+
+**3. Build and test huginn**, in another terminal:
 
 ```bash
+cd huginn
 cargo build --release -p ledger-dump
 cargo test --release
 ```
 
-In `huginn-evm`:
+**4. Build and test huginn-evm:**
 
 ```bash
+cd huginn-evm
 forge install foundry-rs/forge-std --no-git
 forge test
-cd app
-cargo build --release
+cd app && cargo build --release && cd ..
 ```
 
-**3. Run the TUI** from `huginn-evm`:
+`.env` is optional on the local chain: the app reads `.env.example`, and with no `PRIVATE_KEY` it uses anvil's public test key, only on chain 31337.
+
+**5. Check the setup**, from `huginn-evm`. It lists every tool it needs and prints the fix for anything missing:
+
+```bash
+./app/target/release/huginn-evm run doctor
+```
+
+**6. Run the TUI:**
 
 ```bash
 ./app/target/release/huginn-evm
 ```
 
-`e` writes a message, `enter` runs it, `d` shows details, `?` shows help, and `m` switches between practice and real (STARK) proofs. See `huginn-evm/docs/demo.md`.
+`e` writes a message, `enter` runs it, `d` shows details, `?` shows help, and `m` switches between practice and real (STARK) proofs. What you should see at each step: `huginn-evm/docs/demo.md`.
 
-The `fixtures/local` files in huginn (validator set, shred version) are for **this repo's** local chain. A fresh validator makes a new chain with its own keys. Refresh them once it's running:
+### A fresh validator is a new chain
+
+The `fixtures/local` files in huginn (validator set, shred version) belong to **this repo's** local chain. A fresh `.local-ledger` makes a new chain with its own keys, so refresh them once it's running:
 
 ```bash
 cargo run --release -p fetch -- cluster-info --cluster local
 cargo run --release -p fetch -- validator-set --cluster local
 ```
 
-Then update `SHRED_VERSION` and `VALIDATOR_SET_HASH` in `huginn-evm/.env` to match.
+Then copy the new `SHRED_VERSION` and `VALIDATOR_SET_HASH` into `huginn-evm/.env`.
 
 ---
 

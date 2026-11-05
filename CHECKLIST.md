@@ -63,7 +63,7 @@ One screen that runs the whole flow step by step: each step shows its status, ti
 - [x] 7.4 Example `SolanaControlled.sol`: a contract on Base that only acts on transactions signed by a chosen Solana key. `SolanaControlled` + `SolanaGreeter` (7 tests), and TUI steps 10–11: a live memo changes the greeting
 
 ## Phase 8 — publish and record
-- [ ] 8.1 Push `huginn`; create the `huginn-evm` GitHub repo; relayer switches to the git dependency. **You:** approve
+- [ ] 8.1 Push `huginn`; create the `huginn-evm` GitHub repo; the huginn-evm app can switch to the git dependency. **You:** approve
 - [ ] 8.2 Final full TUI run, docs refreshed (`codebase.md` for both repos)
 - [ ] 8.3 **You:** video; one-pager
 

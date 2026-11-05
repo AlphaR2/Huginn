@@ -13,9 +13,8 @@ A running log of what we confirmed against real code and data. Where this file d
 | solana-signer-store | 0.1.0 | Transitive. Bitmap encoding |
 | rayon | 1.12.0 | Transitive. Unused at runtime if `thread_pool = None` |
 | wincode | 0.6.3 | Transitive. Vote payload serialization |
-| Solana CLI | 3.1.10 | **Upgrade to v4.4.0 for 2.1** (`solana-test-validator --alpenglow`) |
-| SP1 (`cargo prove`) | not installed | Needed for 0.10 |
-| Foundry | not installed | Needed for Phase 4 |
+| Solana CLI | 4.4.0 | `solana-test-validator --alpenglow` |
+| Foundry | 1.9.0 | |
 | rustc for Geyser plugin | 1.98.1 | Must match Agave 4.4.0's toolchain (dylib ABI) |
 | Anchor | 1.1.2 | Only needed if we build the optional outbox |
 | SP1 | 6.10.0 (2026-10-23) | `sp1-zkvm`, `sp1-sdk`, `sp1-build` =6.10.0. Patches: `bls12_381` patch-0.8.0-sp1-6.10.0, `sha2` patch-sha2-0.10.8/0.9.9-sp1-6.10.0 |
@@ -191,7 +190,7 @@ Yellowstone gRPC is what Triton ("Dragon's Mouth"), Helius, QuickNode and others
 - Consequence: **any shred source is a complete data source.** It gives the certificate (from the child's footer) and the inclusion data (from the block's shreds). The footer-dump plugin and Yellowstone become optional.
 
 ### EVM destination (items 4.3–4.5, 2026-11-04, repo `huginn-evm`)
-- Destinations are separate repos that depend on `huginn-prover`. `huginn-evm`'s relayer builds through that dependency and gets the same program vkey (`0x000482e7…5fc1b`).
+- Destinations are separate repos that depend on `huginn-prover`. `huginn-evm`'s app builds through that dependency and gets the same program vkey (`0x000482e7…5fc1b`).
 - Foundry 1.9.0, solc 0.8.28: **19 tests pass** on the real public values of the proven memo transfer, with a stand-in verifier that binds a proof to (vkey, public values).
 - Anvil, end to end: deploy (1,081,264 gas), then `submit` (**105,825 gas** including the 21k base). `isVerified(sig)` is true, and `finalizedBlock(46718)` equals the proven block_id.
 - Expected on a real chain: ~105k plus the SP1 Groth16 verifier (~270k), so ~380k per submit. To measure once a Groth16 proof exists.

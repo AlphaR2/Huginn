@@ -46,7 +46,7 @@ crates/fetch/           CLI: genesis certs, shred version, validator sets (with 
 crates/ledger-dump/     block fixtures from any shred source (a ledger, or shred files), every check done first
 plugins/footer-dump/    optional Geyser plugin that captures every block footer's finality certificate
 zk/program/             SP1 program: proves finality + one transaction, commits fixed-layout public values
-zk/prover/              huginn-prover crate (prove a tx; what relayers depend on) + `huginn` CLI
+zk/prover/              huginn-prover crate (prove a tx; what destination apps depend on) + `huginn` CLI
 fixtures/               real data from mainnet, devnet and the local Alpenglow validator
 docs/                   findings, codebase guide, research
 ```
@@ -59,11 +59,12 @@ docs/                   findings, codebase guide, research
 - [`docs/codebase.md`](docs/codebase.md): a guided tour of every folder and file
 - [`docs/run.md`](docs/run.md): run it locally, make a Groth16 proof on a VPS, clean up afterwards
 
-## Build and test
+## Setup
+
+One guide for both repos: [`docs/run.md`](docs/run.md) part 1 (tools, clone, validator, build, `doctor`, TUI). Just the tests:
 
 ```bash
-cargo build --workspace
 cargo test --release
 ```
 
-Pinned toolchain and crate versions are listed in `docs/findings.md`. To run the whole flow (local validator, then proof, then EVM), see [`docs/run.md`](docs/run.md).
+Pinned toolchain and crate versions are listed in `docs/findings.md`.
