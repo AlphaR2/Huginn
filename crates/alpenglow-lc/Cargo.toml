@@ -19,4 +19,7 @@ thiserror.workspace = true
 [dev-dependencies]
 serde_json.workspace = true
 rayon = "1"
+solana-transaction.workspace = true
+solana-message.workspace = true
+wincode.workspace = true
 anyhow.workspace = true

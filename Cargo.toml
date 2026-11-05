@@ -13,6 +13,10 @@ agave-bls-cert-verify = { version = "=4.4.0", features = ["agave-unstable-api"] 
 agave-votor-messages = { version = "=4.4.0", features = ["agave-unstable-api"] }
 solana-hash = "=4.7.0"
 solana-bls-signatures = "=4.0.2"
+# Only for tests that check alpenglow-core's transaction parser against Agave's.
+solana-transaction = { version = "=5.1.0", features = ["wincode"] }
+solana-message = { version = "=5.1.0", features = ["wincode"] }
+wincode = "=0.6.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hex = { version = "0.4", features = ["serde"] }

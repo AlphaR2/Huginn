@@ -9,7 +9,7 @@
 
 use {
     crate::{
-        block::{self, Component},
+        block,
         finality::{self, CertType},
         shred::{self, Hash, Shred, DATA_SHREDS_PER_FEC_SET},
         tx,
@@ -271,18 +271,11 @@ impl TxInclusion {
         let components = block::deshred(&shreds)?;
         let mut start = first.index();
         for bytes in &components {
-            let component = block::parse_component(bytes)?;
-            if let Component::Entries(entries) = &component {
-                for (e, entry) in entries.iter().enumerate() {
-                    if let Some(t) = entry.transactions.iter().position(|t| t.signatures.first() == Some(&sig)) {
-                        return Ok(IncludedTx {
-                            component_start_shred: start,
-                            entry_index: e as u32,
-                            tx_index: t as u32,
-                            raw: entry.transactions[t].raw.to_vec(),
-                        });
-                    }
-                }
+            // Only the bytes up to the transaction are parsed (`find_in_component`). A
+            // component that fails to parse before reaching it simply doesn't count:
+            // components are framed by the shreds' DATA_COMPLETE flags, not by each other.
+            if let Ok(Some((e, t, tx))) = block::find_in_component(bytes, &sig) {
+                return Ok(IncludedTx { component_start_shred: start, entry_index: e as u32, tx_index: t as u32, raw: tx.raw.to_vec() });
             }
             start += shreds_in(bytes, &shreds, start)?;
         }
@@ -302,17 +295,15 @@ impl TxInclusion {
             }
             let run = &shreds[start..=i];
             let bytes = block::deshred(run)?;
-            if let Component::Entries(entries) = block::parse_component(&bytes[0])? {
-                if entries.iter().flat_map(|e| &e.transactions).any(|t| t.signatures.first() == Some(&signature)) {
-                    return Ok(TxInclusion {
-                        fec_roots,
-                        parent_slot,
-                        parent_block_id,
-                        boundary_shred: start.checked_sub(1).map(|b| data_shreds[b].clone()),
-                        shreds: data_shreds[start..=i].to_vec(),
-                        signature: signature.to_vec(),
-                    });
-                }
+            if let Ok(Some(_)) = block::find_in_component(&bytes[0], &signature) {
+                return Ok(TxInclusion {
+                    fec_roots,
+                    parent_slot,
+                    parent_block_id,
+                    boundary_shred: start.checked_sub(1).map(|b| data_shreds[b].clone()),
+                    shreds: data_shreds[start..=i].to_vec(),
+                    signature: signature.to_vec(),
+                });
             }
             start = i + 1;
         }

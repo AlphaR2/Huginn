@@ -225,7 +225,7 @@ Sources: Agave v4.4.0 `entry/src/block_component.rs`, `entry/src/entry.rs`, `led
 - **Real transaction:** a 0.5 SOL transfer with the memo "huginn: hello from solana", sent from the local faucet, landed in slot 46718 (legacy, success).
   - Parsed out of the block's shreds, its 275 bytes equal `getTransaction`'s (`fixtures/local/tx_46718.json`).
   - It sits in component 2 (shreds 32..63), entry 0, tx 0.
-- **Transaction parser** (`tx.rs`): legacy and v0, compact-u16 lengths (canonical only), plus the runtime's structural rules (signature count = header, writable fee payer, program ids static and not the payer, indexes in range, at most 256 accounts).
+- **Transaction parser** (`tx.rs`): legacy and v0 (v1 added later, see "v1 transactions are live"), compact-u16 lengths (canonical only), plus the runtime's structural rules (signature count = header, writable fee payer, program ids static and not the payer, indexes in range, at most 256 accounts).
 - **Efficient inclusion (`TxInclusion`):**
   - The block_id is rebuilt from **all FEC roots** (32 bytes each) plus the parent.
   - Only the transaction's **own component** shreds are given; each proves itself against its FEC root with its embedded Merkle proof.
@@ -385,6 +385,14 @@ Sources: Agave v4.4.0 `entry/src/block_component.rs`, `runtime/src/block_compone
 - Fields in order: `node_pubkey`, `authorized_withdrawer`, `inflation_rewards_collector`, `block_revenue_collector` (32 bytes each), two u16 commission fields, `pending_delegator_rewards` u64, then `bls_pubkey_compressed: Option<[u8;48]>`.
 - So the option tag sits at **byte offset 144**, and the key at bytes **145..193**.
 - **Stored compressed (48 bytes).** *(PLAN §8.4 Confirm: resolved)* Still to check against a live account in item 0.6.
+
+### v1 transactions are live (2026-11-05, review finding 4)
+- SIMD-0385 (v1 transaction format, up to 4,096 bytes) activated on mainnet at epoch 1035 (2026-09-15), and is active on testnet and devnet. Feature gate `txv1aq4pp281K9um3tnPgkfX8UqtFT6wcVW3hNezGLL`.
+- Before this, `tx.rs` refused v1, and one refused transaction made its whole component unparseable, so **any transaction sharing a component with a v1 transaction was unprovable** on real clusters.
+- Wire format, from `solana-message` 5.1.0 `versions/v1` and `solana-transaction` 5.1.0 `SchemaRead for VersionedTransaction`: first byte 0x81; header; config mask u32 LE; blockhash; u8 instruction count; u8 address count; addresses; config values in bit order (u64 priority fee for bits 0+1, u32 each for bits 2, 3, 4); 4-byte instruction headers (program index, account count, u16 LE data length); then each instruction's accounts and data; then `num_required_signatures` signatures. The signed message is everything before the signatures, 0x81 included.
+- Agave reads a first byte below 0x80 as a one-byte signature count, 0x81 as v1, and refuses anything else.
+- Fix: `tx.rs` parses v1 with Agave's rules, matching Agave exactly on 3 million random and mutated transactions (300,000 run as a test). Inclusion now parses a component only up to the target (`block::find_in_component`). The EVM side's `SolanaTx.sol` reads v1 too.
+- What's left: a format Huginn doesn't know, *before* the target in its component, still hides it. That can only happen if Solana adds another transaction format, so the parser has to follow Agave's releases.
 
 ## Open problems
 

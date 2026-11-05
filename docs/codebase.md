@@ -112,7 +112,8 @@ A leader writes the block as a sequence of **components**, each split across con
   - **entry batch**: `count | entries`, where each entry is `num_hashes | hash | transactions`;
   - **marker**: header (parent slot and block_id), footer (bank hash and finality cert), update-parent, or genesis cert.
 - **`Reader`** is a tiny bounds-checked cursor; every read returns `None` instead of panicking. `compact_u16` reads Solana's 1–3-byte lengths and rejects non-canonical encodings.
-- **`find_transaction`** finds a transaction by its first signature (its id).
+- **`find_transaction`** finds a transaction by its first signature (its id), in already-parsed components.
+- **`find_in_component`** does the same on one component's raw bytes, but **parses only up to the transaction**. Inclusion uses it, so nothing that comes after the transaction (even bytes no parser knows) can stop it being proven. That's sound because each transaction's length comes from its own bytes: what's before the target fixes where it starts and ends.
 - **`parse_footer`** reads the footer marker. The layout is Agave's `BlockFooterV1`: bank hash, producer time, user agent, then an optional **finalization certificate** (slot, block_id, aggregate signature and bitmap, plus an optional notar aggregate on the slow path). **Block S's footer certifies its parent**, so S's own certificate is in its child's footer. That means shreds alone are enough to prove finality, with no plugin and no provider.
 
 Real layout seen locally: **header → entries → footer → one tick entry**, with each component padded to whole FEC sets. That padding is why tiny blocks still have 3–4 FEC sets.
@@ -120,7 +121,9 @@ Real layout seen locally: **header → entries → footer → one tick entry**, 
 *Tests:* `tests/block_contents.rs`. It finds our real memo transfer byte-for-byte equal to RPC's copy, and checks that each footer's certificate equals the plugin's copy byte for byte.
 
 ### `src/tx.rs`: the transaction format
-Parses **legacy and v0** transactions with no Solana crates:
+Parses **legacy, v0 and v1** transactions with no Solana crates. The first byte decides: below 0x80 it's the signature count of a legacy or v0 transaction, 0x81 starts a v1 transaction, and anything else isn't a transaction.
+
+Legacy and v0:
 - signatures;
 - the optional version byte;
 - the 3-byte header;
@@ -129,7 +132,11 @@ Parses **legacy and v0** transactions with no Solana crates:
 - instructions (program index, account indexes, data);
 - v0 address-table lookups.
 
-`sanity_check` applies the runtime's structural rules (signature count matches the header, fee payer writable, indexes in range, at most 256 accounts).
+v1 (SIMD-0385, live on mainnet since epoch 1035, up to 4,096 bytes) puts the **message first and the signatures last**. Counts are single bytes, there are no lookup tables, and compute settings (priority fee, compute limit, data size, heap size) sit in the header behind a bit mask. `parse_v1` reads it; the full layout is at the top of the file.
+
+`sanity_check` applies the runtime's structural rules (signature count matches the header, fee payer writable, indexes in range, at most 256 accounts, every lookup table loads something). `sanity_check_v1` applies Agave's v1 rules (at most 12 signatures, 64 instructions, 64 addresses, no duplicate addresses, a valid config mask and heap size).
+
+*Tests:* `alpenglow-lc/tests/tx_matches_agave.rs` feeds 300,000 random and mutated transactions of all three kinds to both this parser and Agave's own (`solana-transaction` 5.1.0, wincode, as blocks use). They must accept and reject exactly the same ones, and read the same fields and signed bytes. `fixtures/tx_v1_agave.json` is a v1 transaction written by Agave's SDK.
 
 Handy accessors: `signers()` and `program_id(ix)`. `message` is exactly the bytes the signatures sign.
 

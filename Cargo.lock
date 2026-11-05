@@ -140,7 +140,10 @@ dependencies = [
  "sha2 0.10.9",
  "solana-bls-signatures",
  "solana-hash",
+ "solana-message",
+ "solana-transaction",
  "thiserror",
+ "wincode",
 ]
 
 [[package]]

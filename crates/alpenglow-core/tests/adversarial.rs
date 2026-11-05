@@ -544,32 +544,127 @@ fn mutation_fuzz_never_panics_and_accepted_transactions_are_sane() {
     assert!(accepted > 1000, "fuzzer should still reach accepted inputs, got {accepted}");
 }
 
-/// CENSORSHIP VECTOR: one transaction Huginn cannot parse (for example a V1 transaction,
-/// which the Agave SDK Huginn pins already defines: prefix 0x81, signatures after the
-/// message) makes the WHOLE component unparseable, so every other transaction in that
-/// component becomes unprovable. Whoever can land such a transaction next to a target
-/// transaction can block its proof. (Whether V1 is active on a given cluster is not
-/// checked here; the format exists in the pinned SDK.)
-#[test]
-fn one_unparseable_transaction_poisons_its_whole_component() {
-    let good = Tx::valid().bytes();
-    let mut v1_like = vec![0x81u8, 1, 0, 1];
-    v1_like.extend_from_slice(&[0u8; 200]);
+/// A minimal valid v1 transaction (prefix 0x81, signatures after the message): one signer,
+/// the Memo program, one Memo instruction, a compute unit limit in the config.
+fn v1_tx(memo: &[u8]) -> Vec<u8> {
+    let mut o = vec![0x81, 1, 0, 1];
+    o.extend_from_slice(&0b100u32.to_le_bytes()); // config: compute unit limit
+    o.extend_from_slice(&[3; 32]); // blockhash
+    o.extend_from_slice(&[1, 2]); // 1 instruction, 2 addresses
+    o.extend_from_slice(&[8; 32]);
+    o.extend_from_slice(&MEMO);
+    o.extend_from_slice(&200_000u32.to_le_bytes());
+    o.extend_from_slice(&[1, 1]); // program 1, 1 account
+    o.extend_from_slice(&(memo.len() as u16).to_le_bytes());
+    o.push(0);
+    o.extend_from_slice(memo);
+    o.extend_from_slice(&[0x55; 64]); // the signature, at the end
+    o
+}
 
+fn entry_of(txs: &[&[u8]]) -> Vec<u8> {
     let mut c = 1u64.to_le_bytes().to_vec(); // one entry
     c.extend_from_slice(&1u64.to_le_bytes()); // num_hashes
     c.extend_from_slice(&[0; 32]);
-    c.extend_from_slice(&2u64.to_le_bytes()); // two transactions
-    c.extend_from_slice(&good);
-    c.extend_from_slice(&v1_like);
-    assert!(block::parse_component(&c).is_err(), "the good transaction is collateral damage");
+    c.extend_from_slice(&(txs.len() as u64).to_le_bytes());
+    for t in txs {
+        c.extend_from_slice(t);
+    }
+    c
+}
 
-    // The same two transactions in the other order: still poisoned.
-    let mut c = 1u64.to_le_bytes().to_vec();
-    c.extend_from_slice(&1u64.to_le_bytes());
-    c.extend_from_slice(&[0; 32]);
-    c.extend_from_slice(&2u64.to_le_bytes());
-    c.extend_from_slice(&v1_like);
-    c.extend_from_slice(&good);
-    assert!(block::parse_component(&c).is_err());
+/// FIXED (finding 4). Before: one transaction Huginn couldn't parse made its whole
+/// component unparseable, so its neighbours were unprovable. v1 transactions (SIMD-0385)
+/// are live on mainnet since epoch 1035, so this was a real censorship vector.
+/// Now v1 parses, and a component is parsed only up to the target transaction.
+#[test]
+fn fixed_a_neighbouring_transaction_no_longer_blocks_the_target() {
+    let good = Tx::valid().bytes();
+    let sig = [1u8; 64]; // Tx::valid()'s first signature
+    let v1 = v1_tx(b"a v1 neighbour");
+    let mut junk = vec![0x82u8, 1, 0, 1]; // no Solana format starts with 0x82
+    junk.extend_from_slice(&[0u8; 200]);
+
+    // A real v1 transaction before or after the target: everything parses.
+    for c in [entry_of(&[&good, &v1]), entry_of(&[&v1, &good])] {
+        assert!(block::parse_component(&c).is_ok());
+        assert!(block::find_in_component(&c, &sig).unwrap().is_some());
+    }
+    // Bytes no parser knows, after the target: never read, the target is found.
+    let c = entry_of(&[&good, &junk]);
+    assert!(block::parse_component(&c).is_err(), "the whole component still doesn't parse");
+    let (e, t, tx) = block::find_in_component(&c, &sig).unwrap().unwrap();
+    assert_eq!((e, t, tx.raw), (0, 0, &good[..]));
+}
+
+/// What's left: bytes no parser knows BEFORE the target still hide it, because the target's
+/// start can't be found without reading past them. Such bytes can't be in a finalized
+/// block (Agave couldn't have replayed it), so this only bites if Solana adds a new
+/// transaction format that Huginn doesn't know yet. The v1 test above is that case for v1.
+#[test]
+fn an_unknown_format_before_the_target_still_hides_it() {
+    let good = Tx::valid().bytes();
+    let mut junk = vec![0x82u8, 1, 0, 1];
+    junk.extend_from_slice(&[0u8; 200]);
+    assert!(block::find_in_component(&entry_of(&[&junk, &good]), &[1u8; 64]).is_err());
+}
+
+#[test]
+fn v1_transaction_fields_and_signed_message() {
+    let b = v1_tx(b"huginn:1:0xabc:1:hi");
+    let c = entry_of(&[&b]);
+    let Component::Entries(entries) = block::parse_component(&c).unwrap() else { panic!() };
+    let t = &entries[0].transactions[0];
+    assert_eq!(t.version, Some(1));
+    assert_eq!(t.signatures, vec![[0x55; 64]]);
+    assert_eq!(t.account_keys, vec![[8; 32], MEMO]);
+    assert_eq!(t.recent_blockhash, [3; 32]);
+    assert_eq!(t.instructions.len(), 1);
+    assert_eq!((t.instructions[0].program_id_index, t.instructions[0].accounts, t.instructions[0].data), (1, &[0u8][..], &b"huginn:1:0xabc:1:hi"[..]));
+    // The signature signs everything before it, the 0x81 byte included.
+    assert_eq!(t.message, &b[..b.len() - 64]);
+    assert_eq!(t.raw, &b[..]);
+}
+
+#[test]
+fn v1_rules_match_agave() {
+    let base = v1_tx(b"x");
+    let bad = |f: &dyn Fn(&mut Vec<u8>)| {
+        let mut b = base.clone();
+        f(&mut b);
+        block::parse_component(&entry_of(&[&b])).is_err()
+    };
+    assert!(!bad(&|_| {}));
+    assert!(bad(&|b| b[4] = 0b100000), "unknown config bit");
+    assert!(bad(&|b| b[4] = 0b01), "half a priority fee");
+    assert!(bad(&|b| b[42..74].copy_from_slice(&MEMO)), "duplicate addresses");
+    assert!(bad(&|b| b[2] = 1), "readonly fee payer");
+    assert!(bad(&|b| { b.pop(); }), "signature cut short");
+    assert!(bad(&|b| b.push(0)), "trailing byte");
+    assert!(bad(&|b| b[110] = 0), "program id is the fee payer");
+    assert!(bad(&|b| b[112] = 0xff), "data length past the end");
+}
+
+/// A v1 transaction serialized by Agave's own SDK (`fixtures/tx_v1_agave.json`): two
+/// signers, priority fee + compute limit + heap size, a 300-byte instruction.
+#[test]
+fn v1_transaction_written_by_agave() {
+    let p = format!("{}/../../fixtures/tx_v1_agave.json", env!("CARGO_MANIFEST_DIR"));
+    let j: Value = serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap();
+    let raw = hex::decode(j["raw"].as_str().unwrap()).unwrap();
+    let message = hex::decode(j["message"].as_str().unwrap()).unwrap();
+    let c = entry_of(&[&raw]);
+    let Component::Entries(entries) = block::parse_component(&c).unwrap() else { panic!() };
+    let t = &entries[0].transactions[0];
+    assert_eq!(t.version, Some(1));
+    assert_eq!(t.message, &message[..]);
+    assert_eq!(t.signatures, vec![[0x11; 64], [0x22; 64]]);
+    assert_eq!((t.num_required_signatures, t.num_readonly_signed, t.num_readonly_unsigned), (2, 1, 1));
+    assert_eq!(t.account_keys, vec![[0xa1; 32], [0xb2; 32], [0xc3; 32], MEMO]);
+    assert_eq!(t.recent_blockhash, [0x77; 32]);
+    assert_eq!(t.instructions[0].data, b"huginn: hello from a v1 transaction");
+    assert_eq!(t.instructions[0].accounts, &[0, 1]);
+    assert_eq!(t.instructions[1].data, &[b'a'; 300][..]);
+    // Found by its first signature, which sits at the end of a v1 transaction.
+    assert!(block::find_in_component(&c, &[0x11; 64]).unwrap().is_some());
 }

@@ -180,6 +180,41 @@ pub fn parse_component(bytes: &[u8]) -> Result<Component<'_>, Error> {
     Ok(component)
 }
 
+/// Finds the transaction whose first signature is `signature` in one component, and
+/// where it sits: `(entry index, transaction index, transaction)`.
+///
+/// Parses only as far as that transaction. Whatever comes after it in the component is
+/// never read, so a transaction this parser can't handle, placed after the target, can't
+/// make the target unprovable. That is sound: a component is read from its first byte
+/// and every transaction's length comes from its own bytes, so the bytes before the
+/// target fix where the target starts and ends, whatever follows.
+pub fn find_in_component<'a>(bytes: &'a [u8], signature: &[u8; 64]) -> Result<Option<(usize, usize, Transaction<'a>)>, Error> {
+    let mut r = Reader::new(bytes);
+    let bad = |r: &Reader| Error::Malformed(r.pos);
+    let count = r.u64().ok_or_else(|| bad(&r))?;
+    if count == 0 {
+        return Ok(None); // a block marker holds no transactions
+    }
+    if count > (r.rest() / 48) as u64 {
+        return Err(bad(&r));
+    }
+    for e in 0..count as usize {
+        r.u64().ok_or_else(|| bad(&r))?; // num_hashes
+        r.hash().ok_or_else(|| bad(&r))?;
+        let n = r.u64().ok_or_else(|| bad(&r))?;
+        if n > r.rest() as u64 {
+            return Err(bad(&r));
+        }
+        for t in 0..n as usize {
+            let tx = tx::parse(&mut r)?;
+            if tx.signatures.first() == Some(signature) {
+                return Ok(Some((e, t, tx)));
+            }
+        }
+    }
+    Ok(None)
+}
+
 fn parse_marker(version: u16, variant: u8, data: &[u8]) -> Result<Marker<'_>, Error> {
     let parent = |data: &[u8]| -> Result<(u64, Hash), Error> {
         // Versioned: u8 tag (=1), then parent_slot u64 | parent_block_id [32].
