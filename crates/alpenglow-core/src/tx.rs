@@ -120,7 +120,8 @@ pub(crate) fn parse<'a>(r: &mut Reader<'a>) -> Result<Transaction<'a>, Error> {
     } else {
         None
     };
-    let (Some(num_required_signatures), Some(num_readonly_signed), Some(num_readonly_unsigned)) = (r.u8(), r.u8(), r.u8())
+    let (Some(num_required_signatures), Some(num_readonly_signed), Some(num_readonly_unsigned)) =
+        (r.u8(), r.u8(), r.u8())
     else {
         return Err(bad(r));
     };
@@ -138,7 +139,11 @@ pub(crate) fn parse<'a>(r: &mut Reader<'a>) -> Result<Transaction<'a>, Error> {
         let accounts = r.take(n).ok_or_else(|| bad(r))?;
         let n = r.compact_u16().ok_or_else(|| bad(r))?;
         let data = r.take(n).ok_or_else(|| bad(r))?;
-        instructions.push(Instruction { program_id_index, accounts, data });
+        instructions.push(Instruction {
+            program_id_index,
+            accounts,
+            data,
+        });
     }
     let mut address_table_lookups = Vec::new();
     if version.is_some() {
@@ -149,7 +154,11 @@ pub(crate) fn parse<'a>(r: &mut Reader<'a>) -> Result<Transaction<'a>, Error> {
             let writable = r.take(w).ok_or_else(|| bad(r))?;
             let ro = r.compact_u16().ok_or_else(|| bad(r))?;
             let readonly = r.take(ro).ok_or_else(|| bad(r))?;
-            address_table_lookups.push(AddressTableLookup { table, writable, readonly });
+            address_table_lookups.push(AddressTableLookup {
+                table,
+                writable,
+                readonly,
+            });
         }
     }
 
@@ -186,7 +195,8 @@ fn parse_v1<'a>(r: &mut Reader<'a>) -> Result<Transaction<'a>, Error> {
     let bad = |r: &Reader| Error::Malformed(r.pos);
     r.pos += 1; // the 0x81 version byte, part of the signed message
 
-    let (Some(num_required_signatures), Some(num_readonly_signed), Some(num_readonly_unsigned)) = (r.u8(), r.u8(), r.u8())
+    let (Some(num_required_signatures), Some(num_readonly_signed), Some(num_readonly_unsigned)) =
+        (r.u8(), r.u8(), r.u8())
     else {
         return Err(bad(r));
     };
@@ -222,14 +232,22 @@ fn parse_v1<'a>(r: &mut Reader<'a>) -> Result<Transaction<'a>, Error> {
         }
     }
 
-    let headers = r.take(4 * num_instructions as usize).ok_or_else(|| bad(r))?;
+    let headers = r
+        .take(4 * num_instructions as usize)
+        .ok_or_else(|| bad(r))?;
     let mut instructions = Vec::with_capacity(num_instructions as usize);
     // Indexed rather than `as_chunks`, which the zkVM's Rust toolchain may not have.
     for i in 0..num_instructions as usize {
         let h = &headers[4 * i..4 * i + 4];
         let accounts = r.take(h[1] as usize).ok_or_else(|| bad(r))?;
-        let data = r.take(u16::from_le_bytes([h[2], h[3]]) as usize).ok_or_else(|| bad(r))?;
-        instructions.push(Instruction { program_id_index: h[0], accounts, data });
+        let data = r
+            .take(u16::from_le_bytes([h[2], h[3]]) as usize)
+            .ok_or_else(|| bad(r))?;
+        instructions.push(Instruction {
+            program_id_index: h[0],
+            accounts,
+            data,
+        });
     }
     let message_end = r.pos;
     let mut signatures = Vec::with_capacity(num_required_signatures as usize);
@@ -302,10 +320,18 @@ fn sanity_check(tx: &Transaction) -> Result<(), Error> {
     if tx.num_readonly_signed as usize >= req {
         return Err(Error::Invalid("fee payer must be writable"));
     }
-    if tx.address_table_lookups.iter().any(|l| l.writable.is_empty() && l.readonly.is_empty()) {
+    if tx
+        .address_table_lookups
+        .iter()
+        .any(|l| l.writable.is_empty() && l.readonly.is_empty())
+    {
         return Err(Error::Invalid("lookup table loads no accounts"));
     }
-    let lookup_keys: usize = tx.address_table_lookups.iter().map(|l| l.writable.len() + l.readonly.len()).sum();
+    let lookup_keys: usize = tx
+        .address_table_lookups
+        .iter()
+        .map(|l| l.writable.len() + l.readonly.len())
+        .sum();
     let total_keys = tx.account_keys.len() + lookup_keys;
     if total_keys > 256 {
         return Err(Error::Invalid("more than 256 accounts"));

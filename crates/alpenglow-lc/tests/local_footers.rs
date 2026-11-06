@@ -21,7 +21,9 @@ fn path(file: &str) -> String {
 }
 
 fn set() -> ValidatorSet {
-    let v: Value = serde_json::from_str(&std::fs::read_to_string(path("validator_set_0.json")).unwrap()).unwrap();
+    let v: Value =
+        serde_json::from_str(&std::fs::read_to_string(path("validator_set_0.json")).unwrap())
+            .unwrap();
     serde_json::from_value(v["validator_set"].clone()).unwrap()
 }
 
@@ -32,7 +34,10 @@ fn footers() -> Vec<(u64, Option<FooterCert>)> {
         .lines()
         .map(|l| {
             let v: Value = serde_json::from_str(l).unwrap();
-            (v["slot"].as_u64().unwrap(), serde_json::from_value(v["block_final_cert"].clone()).unwrap())
+            (
+                v["slot"].as_u64().unwrap(),
+                serde_json::from_value(v["block_final_cert"].clone()).unwrap(),
+            )
         })
         .collect()
 }
@@ -56,8 +61,12 @@ fn every_sampled_footer_cert_verifies() {
         };
         // A footer certifies an earlier block, never itself.
         assert!(c.slot < slot, "footer {slot} certifies {}", c.slot);
-        assert!(c.notar_aggregate.is_none(), "one validator always takes the fast path");
-        let block = verify_footer(&c, SHRED_VERSION, &set).unwrap_or_else(|e| panic!("footer {slot}: {e}"));
+        assert!(
+            c.notar_aggregate.is_none(),
+            "one validator always takes the fast path"
+        );
+        let block =
+            verify_footer(&c, SHRED_VERSION, &set).unwrap_or_else(|e| panic!("footer {slot}: {e}"));
         assert_eq!(block.slot, c.slot);
         with_cert += 1;
     }
@@ -71,11 +80,15 @@ fn every_sampled_footer_cert_verifies() {
 fn every_captured_footer_cert_verifies() {
     let set = set();
     let (mut with_cert, mut without) = (0, 0);
-    for l in std::fs::read_to_string(path("footers.jsonl")).unwrap().lines() {
+    for l in std::fs::read_to_string(path("footers.jsonl"))
+        .unwrap()
+        .lines()
+    {
         let v: Value = serde_json::from_str(l).unwrap();
         match serde_json::from_value::<Option<FooterCert>>(v["block_final_cert"].clone()).unwrap() {
             Some(c) => {
-                verify_footer(&c, SHRED_VERSION, &set).unwrap_or_else(|e| panic!("footer {}: {e}", v["slot"]));
+                verify_footer(&c, SHRED_VERSION, &set)
+                    .unwrap_or_else(|e| panic!("footer {}: {e}", v["slot"]));
                 with_cert += 1;
             }
             None => without += 1,
@@ -90,26 +103,41 @@ fn flipped_signature_bit_fails() {
     c.final_aggregate.signature[50] ^= 1;
     // Usually fails decompression (off the curve); a valid point would fail the pairing.
     let err = verify_footer(&c, SHRED_VERSION, &set()).unwrap_err();
-    assert!(matches!(err, Error::SignatureDecode(_) | Error::Cert(cert::VerifySig(_))), "{err:?}");
+    assert!(
+        matches!(
+            err,
+            Error::SignatureDecode(_) | Error::Cert(cert::VerifySig(_))
+        ),
+        "{err:?}"
+    );
 }
 
 #[test]
 fn different_block_id_fails() {
     let mut c = first_cert();
     c.block_id[0] ^= 1;
-    assert_eq!(verify_footer(&c, SHRED_VERSION, &set()).unwrap_err(), bad_sig());
+    assert_eq!(
+        verify_footer(&c, SHRED_VERSION, &set()).unwrap_err(),
+        bad_sig()
+    );
 }
 
 #[test]
 fn different_slot_fails() {
     let mut c = first_cert();
     c.slot += 1;
-    assert_eq!(verify_footer(&c, SHRED_VERSION, &set()).unwrap_err(), bad_sig());
+    assert_eq!(
+        verify_footer(&c, SHRED_VERSION, &set()).unwrap_err(),
+        bad_sig()
+    );
 }
 
 #[test]
 fn wrong_shred_version_fails() {
-    assert_eq!(verify_footer(&first_cert(), 7016, &set()).unwrap_err(), bad_sig());
+    assert_eq!(
+        verify_footer(&first_cert(), 7016, &set()).unwrap_err(),
+        bad_sig()
+    );
 }
 
 #[test]
@@ -126,7 +154,10 @@ fn different_validator_key_fails() {
     let mut set = set();
     // Another valid BLS key in rank 0's place (the devnet set's rank 0).
     set.entries[0].bls_pubkey = other_key();
-    assert_eq!(verify_footer(&first_cert(), SHRED_VERSION, &set).unwrap_err(), bad_sig());
+    assert_eq!(
+        verify_footer(&first_cert(), SHRED_VERSION, &set).unwrap_err(),
+        bad_sig()
+    );
 }
 
 #[test]
@@ -137,7 +168,10 @@ fn empty_bitmap_fails() {
 }
 
 fn other_key() -> [u8; 48] {
-    let p = format!("{}/../../fixtures/devnet/validator_set_1198.json", env!("CARGO_MANIFEST_DIR"));
+    let p = format!(
+        "{}/../../fixtures/devnet/validator_set_1198.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
     let v: Value = serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap();
     let s: ValidatorSet = serde_json::from_value(v["validator_set"].clone()).unwrap();
     s.entries[0].bls_pubkey
@@ -149,7 +183,9 @@ fn set_commitment_is_stable() {
     // invalidated, so it must only change together with a new layout version.
     assert_eq!(
         hex::encode(set().commitment()),
-        hex::encode(alpenglow_core::proof::validator_set_hash(&set().to_proof_validators()))
+        hex::encode(alpenglow_core::proof::validator_set_hash(
+            &set().to_proof_validators()
+        ))
     );
     assert_eq!(set().to_proof_validators().len(), 1);
 }

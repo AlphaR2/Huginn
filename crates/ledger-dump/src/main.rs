@@ -11,7 +11,9 @@
 use {
     anyhow::{bail, Context, Result},
     clap::Parser,
-    ledger_dump::{build_fixture, export, newest_certified, Certs, Ledger, ShredFiles, ShredSource, Sets},
+    ledger_dump::{
+        build_fixture, export, newest_certified, Certs, Ledger, Sets, ShredFiles, ShredSource,
+    },
     std::{fs, path::PathBuf},
 };
 
@@ -80,7 +82,10 @@ fn main() -> Result<()> {
         Some(s) => s,
         None => newest_certified(src.as_ref(), &certs)?,
     };
-    let sets = Sets { dir: cli.sets.clone(), slots_per_epoch: cli.slots_per_epoch };
+    let sets = Sets {
+        dir: cli.sets.clone(),
+        slots_per_epoch: cli.slots_per_epoch,
+    };
     let built = build_fixture(src.as_ref(), slot, &sets, &certs)?;
     for line in &built.report {
         println!("{line}");

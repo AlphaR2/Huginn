@@ -37,7 +37,12 @@ pub enum Error {
     #[error("signature does not verify")]
     VerifySig,
     #[error("signed stake {signed} of {total} is below {numerator}/{denominator}")]
-    NotEnoughStake { signed: u64, total: u64, numerator: u64, denominator: u64 },
+    NotEnoughStake {
+        signed: u64,
+        total: u64,
+        numerator: u64,
+        denominator: u64,
+    },
 }
 
 /// The certificate types a finality proof needs.
@@ -59,7 +64,9 @@ impl CertType {
     /// FinalizeFast is made of ordinary notarization votes, so it signs the Notar payload.
     pub fn payload(&self, shred_version: u16) -> Vec<u8> {
         let (tag, slot, block_id) = match *self {
-            CertType::Notarize { slot, block_id } | CertType::FinalizeFast { slot, block_id } => (1, slot, Some(block_id)),
+            CertType::Notarize { slot, block_id } | CertType::FinalizeFast { slot, block_id } => {
+                (1, slot, Some(block_id))
+            }
             CertType::Finalize { slot } => (2, slot, None),
             CertType::Genesis { slot, block_id } => (6, slot, Some(block_id)),
         };
@@ -87,7 +94,9 @@ impl CertType {
 /// LSB first. Version 0 (base2) only. Bits past `bits` in the last byte are ignored, as
 /// Agave's decoder truncates them.
 pub fn decode_bitmap(bytes: &[u8], max_validators: usize) -> Result<Vec<usize>, Error> {
-    let [version, lo, hi, payload @ ..] = bytes else { return Err(Error::Decode) };
+    let [version, lo, hi, payload @ ..] = bytes else {
+        return Err(Error::Decode);
+    };
     let bits = u16::from_le_bytes([*lo, *hi]) as usize;
     match version {
         0 => {}
@@ -97,7 +106,9 @@ pub fn decode_bitmap(bytes: &[u8], max_validators: usize) -> Result<Vec<usize>, 
     if bits > max_validators || payload.len() != bits.div_ceil(8) {
         return Err(Error::Decode);
     }
-    Ok((0..bits).filter(|&i| payload[i / 8] >> (i % 8) & 1 == 1).collect())
+    Ok((0..bits)
+        .filter(|&i| payload[i / 8] >> (i % 8) & 1 == 1)
+        .collect())
 }
 
 /// A 96-byte compressed G2 signature (block footers). Includes the subgroup check.
@@ -112,7 +123,8 @@ pub fn signature_from_uncompressed(bytes: &[u8; 192]) -> Result<G2Affine, Error>
 
 /// A 48-byte compressed G1 public key. Agave rejects the identity key when ranking.
 pub fn pubkey_from_compressed(bytes: &[u8; 48]) -> Result<G1Affine, Error> {
-    let p: G1Affine = Option::from(G1Affine::from_compressed(bytes)).ok_or(Error::PubkeyEncoding)?;
+    let p: G1Affine =
+        Option::from(G1Affine::from_compressed(bytes)).ok_or(Error::PubkeyEncoding)?;
     if bool::from(p.is_identity()) {
         return Err(Error::PubkeyEncoding);
     }
@@ -121,7 +133,9 @@ pub fn pubkey_from_compressed(bytes: &[u8; 48]) -> Result<G1Affine, Error> {
 
 /// The message point: hash_to_curve(msg) in G2 with SHA-256 XMD and [`DST`].
 pub fn hash_to_g2(msg: &[u8]) -> G2Affine {
-    G2Affine::from(<G2Projective as HashToCurve<ExpandMsgXmd<sha2::Sha256>>>::hash_to_curve([msg], DST))
+    G2Affine::from(
+        <G2Projective as HashToCurve<ExpandMsgXmd<sha2::Sha256>>>::hash_to_curve([msg], DST),
+    )
 }
 
 /// `e(pk, H(msg)) == e(g1, sig)`, as one multi-Miller loop and one final exponentiation.
@@ -130,7 +144,10 @@ pub fn verify_signature(pubkey: &G1Affine, msg: &[u8], sig: &G2Affine) -> bool {
         return false;
     }
     let h = hash_to_g2(msg);
-    let lhs = multi_miller_loop(&[(pubkey, &G2Prepared::from(h)), (&-G1Affine::generator(), &G2Prepared::from(*sig))]);
+    let lhs = multi_miller_loop(&[
+        (pubkey, &G2Prepared::from(h)),
+        (&-G1Affine::generator(), &G2Prepared::from(*sig)),
+    ]);
     lhs.final_exponentiation() == Gt::identity()
 }
 
@@ -156,12 +173,21 @@ pub fn verify_cert(
         signed = signed.saturating_add(stake);
         agg += key;
     }
-    if !verify_signature(&G1Affine::from(agg), &cert.payload(shred_version), signature) {
+    if !verify_signature(
+        &G1Affine::from(agg),
+        &cert.payload(shred_version),
+        signature,
+    ) {
         return Err(Error::VerifySig);
     }
     let (numerator, denominator) = cert.threshold();
     if (signed as u128) * (denominator as u128) < (numerator as u128) * (total_stake as u128) {
-        return Err(Error::NotEnoughStake { signed, total: total_stake, numerator, denominator });
+        return Err(Error::NotEnoughStake {
+            signed,
+            total: total_stake,
+            numerator,
+            denominator,
+        });
     }
     Ok(signed)
 }

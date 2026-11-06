@@ -81,7 +81,11 @@ fn sha256(parts: &[&[u8]]) -> Hash {
 
 /// Inner node. Only the first 20 bytes of each child are hashed, as in Agave.
 fn join(a: &[u8], b: &[u8]) -> Hash {
-    sha256(&[NODE_PREFIX, &a[..SIZE_OF_PROOF_ENTRY], &b[..SIZE_OF_PROOF_ENTRY]])
+    sha256(&[
+        NODE_PREFIX,
+        &a[..SIZE_OF_PROOF_ENTRY],
+        &b[..SIZE_OF_PROOF_ENTRY],
+    ])
 }
 
 fn u16_at(b: &[u8], i: usize) -> u16 {
@@ -102,7 +106,12 @@ impl<'a> Shred<'a> {
             0xb0 => (Kind::Data, true),
             _ => return Err(Error::Variant(variant)),
         };
-        let shred = Shred { bytes, kind, proof_size: (variant & 0x0F) as usize, resigned };
+        let shred = Shred {
+            bytes,
+            kind,
+            proof_size: (variant & 0x0F) as usize,
+            resigned,
+        };
         // proof_size is at most 15, so the offsets can't underflow; the data buffer
         // (between headers and chained root) just has to be non-negative.
         if bytes.len() != shred.payload_size() || shred.chained_root_offset() < shred.headers() {
@@ -135,7 +144,9 @@ impl<'a> Shred<'a> {
     /// Data shreds only: the parent slot, from the header's `parent_offset`.
     pub fn parent_slot(&self) -> Option<u64> {
         let offset = u16_at(self.bytes, 83);
-        (self.kind == Kind::Data).then(|| self.slot().checked_sub(offset.into())).flatten()
+        (self.kind == Kind::Data)
+            .then(|| self.slot().checked_sub(offset.into()))
+            .flatten()
     }
 
     /// Data shreds only: this shred ends a block component (its bytes are complete).
@@ -150,7 +161,9 @@ impl<'a> Shred<'a> {
             return None;
         }
         let size = u16_at(self.bytes, 86) as usize;
-        (DATA_HEADERS..=self.chained_root_offset()).contains(&size).then(|| &self.bytes[DATA_HEADERS..size])
+        (DATA_HEADERS..=self.chained_root_offset())
+            .contains(&size)
+            .then(|| &self.bytes[DATA_HEADERS..size])
     }
 
     pub fn last_in_slot(&self) -> bool {
@@ -202,7 +215,10 @@ impl<'a> Shred<'a> {
 
     /// Leaf hash: everything after the signature, up to (and including) the chained root.
     pub fn leaf(&self) -> Hash {
-        sha256(&[LEAF_PREFIX, &self.bytes[SIZE_OF_SIGNATURE..self.proof_offset()]])
+        sha256(&[
+            LEAF_PREFIX,
+            &self.bytes[SIZE_OF_SIGNATURE..self.proof_offset()],
+        ])
     }
 
     pub fn proof(&self) -> impl Iterator<Item = &'a [u8]> {
@@ -217,9 +233,17 @@ impl<'a> Shred<'a> {
 }
 
 /// Walks a proof from `leaf` at `index` up to the root.
-pub fn root_from_proof<'p>(index: usize, leaf: Hash, proof: impl IntoIterator<Item = &'p [u8]>) -> Result<Hash, Error> {
+pub fn root_from_proof<'p>(
+    index: usize,
+    leaf: Hash,
+    proof: impl IntoIterator<Item = &'p [u8]>,
+) -> Result<Hash, Error> {
     let (index, root) = proof.into_iter().fold((index, leaf), |(i, node), sibling| {
-        let parent = if i % 2 == 0 { join(&node, sibling) } else { join(sibling, &node) };
+        let parent = if i % 2 == 0 {
+            join(&node, sibling)
+        } else {
+            join(sibling, &node)
+        };
         (i >> 1, parent)
     });
     if index == 0 {
@@ -236,7 +260,10 @@ pub fn merkle_root(leaves: &[Hash]) -> Result<Hash, Error> {
         return Err(Error::Empty);
     }
     while level.len() > 1 {
-        level = level.chunks(2).map(|p| join(&p[0], p.last().unwrap())).collect();
+        level = level
+            .chunks(2)
+            .map(|p| join(&p[0], p.last().unwrap()))
+            .collect();
     }
     Ok(level[0])
 }
@@ -244,13 +271,25 @@ pub fn merkle_root(leaves: &[Hash]) -> Result<Hash, Error> {
 /// The last leaf of the double Merkle tree. Binding `fec_set_count` stops a verifier being
 /// fooled about how many FEC sets there are when an odd last leaf is paired with itself.
 pub fn parent_leaf(parent_slot: u64, parent_block_id: &Hash, fec_set_count: u32) -> Hash {
-    sha256(&[&parent_slot.to_le_bytes(), parent_block_id, &fec_set_count.to_le_bytes()])
+    sha256(&[
+        &parent_slot.to_le_bytes(),
+        parent_block_id,
+        &fec_set_count.to_le_bytes(),
+    ])
 }
 
 /// Alpenglow block_id from the FEC set roots and the block's parent.
-pub fn block_id(fec_roots: &[Hash], parent_slot: u64, parent_block_id: &Hash) -> Result<Hash, Error> {
+pub fn block_id(
+    fec_roots: &[Hash],
+    parent_slot: u64,
+    parent_block_id: &Hash,
+) -> Result<Hash, Error> {
     let mut leaves = fec_roots.to_vec();
-    leaves.push(parent_leaf(parent_slot, parent_block_id, fec_roots.len() as u32));
+    leaves.push(parent_leaf(
+        parent_slot,
+        parent_block_id,
+        fec_roots.len() as u32,
+    ));
     merkle_root(&leaves)
 }
 
@@ -261,7 +300,10 @@ pub fn block_id(fec_roots: &[Hash], parent_slot: u64, parent_block_id: &Hash) ->
 /// to the previous set's root. Coding shreds aren't needed: any data shred's proof
 /// already yields its set's root.
 pub fn fec_roots(slot: u64, data_shreds: &[Shred]) -> Result<Vec<Hash>, Error> {
-    let mut shreds: Vec<_> = data_shreds.iter().filter(|s| s.kind == Kind::Data).collect();
+    let mut shreds: Vec<_> = data_shreds
+        .iter()
+        .filter(|s| s.kind == Kind::Data)
+        .collect();
     shreds.sort_by_key(|s| s.index());
     let last = shreds.last().ok_or(Error::Empty)?;
     if !last.last_in_slot() {
@@ -270,7 +312,10 @@ pub fn fec_roots(slot: u64, data_shreds: &[Shred]) -> Result<Vec<Hash>, Error> {
     let mut roots: Vec<Hash> = Vec::new();
     for (i, s) in shreds.iter().enumerate() {
         if s.slot() != slot {
-            return Err(Error::WrongSlot { expected: slot, got: s.slot() });
+            return Err(Error::WrongSlot {
+                expected: slot,
+                got: s.slot(),
+            });
         }
         if (s.index() as usize) < i {
             return Err(Error::Duplicate(s.index()));
@@ -315,7 +360,11 @@ mod tests {
             let mut levels = vec![leaves.clone()];
             while levels.last().unwrap().len() > 1 {
                 let l = levels.last().unwrap();
-                levels.push(l.chunks(2).map(|p| join(&p[0], p.last().unwrap())).collect());
+                levels.push(
+                    l.chunks(2)
+                        .map(|p| join(&p[0], p.last().unwrap()))
+                        .collect(),
+                );
             }
             for (i, leaf) in leaves.iter().enumerate() {
                 let mut idx = i;

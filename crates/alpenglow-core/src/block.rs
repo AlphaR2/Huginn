@@ -61,8 +61,14 @@ pub struct Entry<'a> {
 pub enum Marker<'a> {
     Footer(&'a [u8]),
     /// The block's parent, as the leader declared it. Also bound into the block_id.
-    Header { parent_slot: u64, parent_block_id: Hash },
-    UpdateParent { parent_slot: u64, parent_block_id: Hash },
+    Header {
+        parent_slot: u64,
+        parent_block_id: Hash,
+    },
+    UpdateParent {
+        parent_slot: u64,
+        parent_block_id: Hash,
+    },
     GenesisCertificate(&'a [u8]),
 }
 
@@ -116,7 +122,8 @@ impl<'a> Reader<'a> {
         self.take(2).map(|b| u16::from_le_bytes([b[0], b[1]]))
     }
     pub fn u64(&mut self) -> Option<u64> {
-        self.take(8).map(|b| u64::from_le_bytes(b.try_into().unwrap()))
+        self.take(8)
+            .map(|b| u64::from_le_bytes(b.try_into().unwrap()))
     }
     pub fn hash(&mut self) -> Option<Hash> {
         self.take(32).map(|b| b.try_into().unwrap())
@@ -170,7 +177,11 @@ pub fn parse_component(bytes: &[u8]) -> Result<Component<'_>, Error> {
             for _ in 0..n {
                 transactions.push(tx::parse(&mut r)?);
             }
-            entries.push(Entry { num_hashes, hash, transactions });
+            entries.push(Entry {
+                num_hashes,
+                hash,
+                transactions,
+            });
         }
         Component::Entries(entries)
     };
@@ -188,7 +199,10 @@ pub fn parse_component(bytes: &[u8]) -> Result<Component<'_>, Error> {
 /// make the target unprovable. That is sound: a component is read from its first byte
 /// and every transaction's length comes from its own bytes, so the bytes before the
 /// target fix where the target starts and ends, whatever follows.
-pub fn find_in_component<'a>(bytes: &'a [u8], signature: &[u8; 64]) -> Result<Option<(usize, usize, Transaction<'a>)>, Error> {
+pub fn find_in_component<'a>(
+    bytes: &'a [u8],
+    signature: &[u8; 64],
+) -> Result<Option<(usize, usize, Transaction<'a>)>, Error> {
     let mut r = Reader::new(bytes);
     let bad = |r: &Reader| Error::Malformed(r.pos);
     let count = r.u64().ok_or_else(|| bad(&r))?;
@@ -229,8 +243,14 @@ fn parse_marker(version: u16, variant: u8, data: &[u8]) -> Result<Marker<'_>, Er
     };
     match (version, variant) {
         (1, 0) => Ok(Marker::Footer(data)),
-        (1, 1) => parent(data).map(|(parent_slot, parent_block_id)| Marker::Header { parent_slot, parent_block_id }),
-        (1, 2) => parent(data).map(|(parent_slot, parent_block_id)| Marker::UpdateParent { parent_slot, parent_block_id }),
+        (1, 1) => parent(data).map(|(parent_slot, parent_block_id)| Marker::Header {
+            parent_slot,
+            parent_block_id,
+        }),
+        (1, 2) => parent(data).map(|(parent_slot, parent_block_id)| Marker::UpdateParent {
+            parent_slot,
+            parent_block_id,
+        }),
         (1, 3) => Ok(Marker::GenesisCertificate(data)),
         _ => Err(Error::UnknownMarker(version, variant)),
     }
@@ -272,7 +292,10 @@ pub fn parse_footer(data: &[u8]) -> Result<Footer, Error> {
     let aggregate = |r: &mut Reader| -> Option<Aggregate> {
         let signature = r.take(96)?.to_vec();
         let len = r.u16()? as usize;
-        Some(Aggregate { signature, bitmap: r.take(len)?.to_vec() })
+        Some(Aggregate {
+            signature,
+            bitmap: r.take(len)?.to_vec(),
+        })
     };
     let option = |r: &mut Reader| -> Option<bool> {
         match r.u8()? {
@@ -292,22 +315,48 @@ pub fn parse_footer(data: &[u8]) -> Result<Footer, Error> {
         let slot = r.u64().ok_or_else(|| bad(&r))?;
         let block_id = r.hash().ok_or_else(|| bad(&r))?;
         let final_aggregate = aggregate(&mut r).ok_or_else(|| bad(&r))?;
-        let notar_aggregate = if option(&mut r).ok_or_else(|| bad(&r))? { Some(aggregate(&mut r).ok_or_else(|| bad(&r))?) } else { None };
-        Some(FooterCert { slot, block_id, final_aggregate, notar_aggregate })
+        let notar_aggregate = if option(&mut r).ok_or_else(|| bad(&r))? {
+            Some(aggregate(&mut r).ok_or_else(|| bad(&r))?)
+        } else {
+            None
+        };
+        Some(FooterCert {
+            slot,
+            block_id,
+            final_aggregate,
+            notar_aggregate,
+        })
     } else {
         None
     };
-    Ok(Footer { bank_hash, producer_time_nanos, user_agent, final_cert })
+    Ok(Footer {
+        bank_hash,
+        producer_time_nanos,
+        user_agent,
+        final_cert,
+    })
 }
 
 /// Finds a transaction by its first signature (the transaction id).
-pub fn find_transaction<'a>(components: &'a [Component<'a>], signature: &[u8; 64]) -> Option<(TxPosition, &'a Transaction<'a>)> {
+pub fn find_transaction<'a>(
+    components: &'a [Component<'a>],
+    signature: &[u8; 64],
+) -> Option<(TxPosition, &'a Transaction<'a>)> {
     for (c, comp) in components.iter().enumerate() {
-        let Component::Entries(entries) = comp else { continue };
+        let Component::Entries(entries) = comp else {
+            continue;
+        };
         for (e, entry) in entries.iter().enumerate() {
             for (t, tx) in entry.transactions.iter().enumerate() {
                 if tx.signatures.first() == Some(signature) {
-                    return Some((TxPosition { component: c, entry: e, tx: t }, tx));
+                    return Some((
+                        TxPosition {
+                            component: c,
+                            entry: e,
+                            tx: t,
+                        },
+                        tx,
+                    ));
                 }
             }
         }

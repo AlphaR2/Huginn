@@ -39,21 +39,42 @@ fn main() -> Result<()> {
     let cert: Value = serde_json::from_str(&std::fs::read_to_string(cert_path)?)?;
     let r = &cert["result"];
     let slot = r["block"]["slot"].as_u64().context("slot")?;
-    let block_id: [u8; 32] = bytes(&r["block"]["blockId"])?.try_into().ok().context("blockId")?;
-    let sig: [u8; 192] = bytes(&r["signature"]["signature"])?.try_into().ok().context("sig")?;
+    let block_id: [u8; 32] = bytes(&r["block"]["blockId"])?
+        .try_into()
+        .ok()
+        .context("blockId")?;
+    let sig: [u8; 192] = bytes(&r["signature"]["signature"])?
+        .try_into()
+        .ok()
+        .context("sig")?;
     let bitmap = bytes(&r["signature"]["bitmap"])?;
 
     let fixture: Value = serde_json::from_str(&std::fs::read_to_string(set_path)?)?;
     let set: ValidatorSet = serde_json::from_value(fixture["validator_set"].clone())?;
 
     let (bits, ranks) = decode_base2(&bitmap)?;
-    println!("cert: slot {slot}, bitmap {bits} bits, {} signers", ranks.len());
-    println!("today's set: epoch {}, {} ranked validators", set.epoch, set.entries.len());
+    println!(
+        "cert: slot {slot}, bitmap {bits} bits, {} signers",
+        ranks.len()
+    );
+    println!(
+        "today's set: epoch {}, {} ranked validators",
+        set.epoch,
+        set.entries.len()
+    );
 
     let payload = genesis_payload(slot, block_id, shred_version);
-    println!("payload ({} bytes): {}", payload.len(), hex::encode(&payload));
+    println!(
+        "payload ({} bytes): {}",
+        payload.len(),
+        hex::encode(&payload)
+    );
 
-    let keys: Vec<_> = set.entries.iter().map(|e| pop_verified(&e.bls_pubkey)).collect::<Result<_>>()?;
+    let keys: Vec<_> = set
+        .entries
+        .iter()
+        .map(|e| pop_verified(&e.bls_pubkey))
+        .collect::<Result<_>>()?;
     let prepared = PreparedHashedMessage::new(&payload);
     let signature = Signature(sig);
 
@@ -84,12 +105,17 @@ fn main() -> Result<()> {
 
 /// The exact bytes validators signed: Agave's own encoder, not ours.
 fn genesis_payload(slot: u64, block_id: [u8; 32], shred_version: u16) -> Vec<u8> {
-    let block = Block { slot, block_id: Hash::new_from_array(block_id) };
+    let block = Block {
+        slot,
+        block_id: Hash::new_from_array(block_id),
+    };
     get_vote_payload_to_sign(Vote::new_genesis_vote(block), shred_version)
 }
 
 fn pop_verified(key: &[u8; 48]) -> Result<PopVerified<PubkeyAffine>> {
-    let affine = PubkeyAffine::try_from(PubkeyCompressed(*key)).ok().context("bad BLS key")?;
+    let affine = PubkeyAffine::try_from(PubkeyCompressed(*key))
+        .ok()
+        .context("bad BLS key")?;
     // SAFETY (trust assumption): keys come from vote accounts, whose PoP the vote program
     // checked at registration. Same assumption Agave makes in epoch_stakes.rs.
     Ok(unsafe { PopVerified::new_unchecked(affine) })
@@ -150,7 +176,9 @@ fn self_test() -> Result<()> {
     // 22 known keys; 11 of them sign a genesis payload. The search must find exactly those.
     let n = 22;
     let signers = [0usize, 2, 3, 5, 8, 9, 13, 14, 17, 19, 21];
-    let kps: Vec<Keypair> = (0..n).map(|i| Keypair::derive(&[i as u8 + 1; 32]).unwrap()).collect();
+    let kps: Vec<Keypair> = (0..n)
+        .map(|i| Keypair::derive(&[i as u8 + 1; 32]).unwrap())
+        .collect();
     let payload = genesis_payload(504_148_999, [7; 32], 12345);
     let sigs: Vec<SignatureProjective> = signers.iter().map(|&i| kps[i].sign(&payload)).collect();
     let agg = SignatureProjective::aggregate(sigs.iter())?;
@@ -178,7 +206,11 @@ fn bytes(v: &Value) -> Result<Vec<u8>> {
     v.as_array()
         .context("expected byte array")?
         .iter()
-        .map(|b| b.as_u64().and_then(|b| u8::try_from(b).ok()).context("not a byte"))
+        .map(|b| {
+            b.as_u64()
+                .and_then(|b| u8::try_from(b).ok())
+                .context("not a byte")
+        })
         .collect()
 }
 
@@ -189,7 +221,9 @@ fn decode_base2(bitmap: &[u8]) -> Result<(usize, Vec<usize>)> {
     }
     let bits = u16::from_le_bytes([bitmap[1], bitmap[2]]) as usize;
     let body = &bitmap[3..];
-    let ranks = (0..bits).filter(|i| body.get(i / 8).is_some_and(|b| b >> (i % 8) & 1 == 1)).collect();
+    let ranks = (0..bits)
+        .filter(|i| body.get(i / 8).is_some_and(|b| b >> (i % 8) & 1 == 1))
+        .collect();
     Ok((bits, ranks))
 }
 

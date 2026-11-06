@@ -50,7 +50,10 @@ impl ValidatorSet {
     pub fn to_proof_validators(&self) -> Vec<alpenglow_core::proof::Validator> {
         self.entries
             .iter()
-            .map(|e| alpenglow_core::proof::Validator { bls_pubkey: e.bls_pubkey.to_vec(), stake: e.stake })
+            .map(|e| alpenglow_core::proof::Validator {
+                bls_pubkey: e.bls_pubkey.to_vec(),
+                stake: e.stake,
+            })
             .collect()
     }
 
@@ -96,7 +99,11 @@ impl ValidatorSet {
         entries.sort_by(|a, b| b.stake.cmp(&a.stake).then(a.bls_pubkey.cmp(&b.bls_pubkey)));
 
         let total_stake = entries.iter().fold(0u64, |t, e| t.saturating_add(e.stake));
-        Self { epoch, total_stake, entries }
+        Self {
+            epoch,
+            total_stake,
+            entries,
+        }
     }
 }
 
@@ -113,7 +120,12 @@ mod tests {
     }
 
     fn cand(v: u8, n: u8, stake: u64, key: Option<[u8; 48]>) -> Candidate {
-        Candidate { vote_pubkey: [v; 32], node_pubkey: [n; 32], stake, bls_pubkey: key }
+        Candidate {
+            vote_pubkey: [v; 32],
+            node_pubkey: [n; 32],
+            stake,
+            bls_pubkey: key,
+        }
     }
 
     #[test]
@@ -143,29 +155,45 @@ mod tests {
 
     #[test]
     fn zero_stake_duplicate_does_not_remove_staked_entry() {
-        let set = ValidatorSet::from_candidates(1, [cand(1, 1, 0, Some(key(1))), cand(2, 2, 9, Some(key(1)))]);
+        let set = ValidatorSet::from_candidates(
+            1,
+            [cand(1, 1, 0, Some(key(1))), cand(2, 2, 9, Some(key(1)))],
+        );
         assert_eq!(set.entries.len(), 1);
     }
 
     #[test]
     fn duplicate_bls_key_drops_all_copies() {
-        let set = ValidatorSet::from_candidates(1, [cand(1, 1, 5, Some(key(1))), cand(2, 2, 9, Some(key(1)))]);
+        let set = ValidatorSet::from_candidates(
+            1,
+            [cand(1, 1, 5, Some(key(1))), cand(2, 2, 9, Some(key(1)))],
+        );
         assert!(set.entries.is_empty());
     }
 
     #[test]
     fn duplicate_node_pubkey_drops_all_copies() {
-        let set =
-            ValidatorSet::from_candidates(1, [cand(1, 7, 5, Some(key(1))), cand(2, 7, 9, Some(key(2)))]);
+        let set = ValidatorSet::from_candidates(
+            1,
+            [cand(1, 7, 5, Some(key(1))), cand(2, 7, 9, Some(key(2)))],
+        );
         assert!(set.entries.is_empty());
     }
 
     #[test]
     fn sorts_by_stake_then_key() {
-        let (lo, hi) = if key(1) < key(2) { (key(1), key(2)) } else { (key(2), key(1)) };
+        let (lo, hi) = if key(1) < key(2) {
+            (key(1), key(2))
+        } else {
+            (key(2), key(1))
+        };
         let set = ValidatorSet::from_candidates(
             1,
-            [cand(1, 1, 5, Some(hi)), cand(2, 2, 5, Some(lo)), cand(3, 3, 9, Some(key(3)))],
+            [
+                cand(1, 1, 5, Some(hi)),
+                cand(2, 2, 5, Some(lo)),
+                cand(3, 3, 9, Some(key(3))),
+            ],
         );
         let order: Vec<_> = set.entries.iter().map(|e| e.bls_pubkey).collect();
         assert_eq!(order, vec![key(3), lo, hi]);

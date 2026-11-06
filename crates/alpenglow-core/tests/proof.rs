@@ -19,7 +19,10 @@ fn json(file: &str) -> Value {
 }
 
 fn tx_sig() -> [u8; 64] {
-    hex::decode(json("tx_46718.json")["signature"].as_str().unwrap()).unwrap().try_into().unwrap()
+    hex::decode(json("tx_46718.json")["signature"].as_str().unwrap())
+        .unwrap()
+        .try_into()
+        .unwrap()
 }
 
 fn real_finality() -> FinalityInput {
@@ -39,18 +42,32 @@ fn bad_sig() -> Error {
 #[test]
 fn real_fast_path_cert_verifies() {
     let f = real_finality().verify().unwrap();
-    assert_eq!((f.slot, f.path, f.shred_version), (46718, Path::Fast, 28090));
+    assert_eq!(
+        (f.slot, f.path, f.shred_version),
+        (46718, Path::Fast, 28090)
+    );
     assert_eq!(f.signed_stake, f.total_stake);
     // The commitment the destination chain would store for epoch 0.
-    assert_eq!(f.validator_set_hash, proof::validator_set_hash(&real_finality().validators));
+    assert_eq!(
+        f.validator_set_hash,
+        proof::validator_set_hash(&real_finality().validators)
+    );
 }
 
 #[test]
 fn synthetic_fast_and_slow_paths_verify() {
     let base = real_finality();
     for n in [1, 7, 100] {
-        assert_eq!(fixture::synthetic(&base, n).verify().unwrap().path, Path::Fast, "n={n}");
-        assert_eq!(fixture::synthetic_slow(&base, n).verify().unwrap().path, Path::Slow, "n={n}");
+        assert_eq!(
+            fixture::synthetic(&base, n).verify().unwrap().path,
+            Path::Fast,
+            "n={n}"
+        );
+        assert_eq!(
+            fixture::synthetic_slow(&base, n).verify().unwrap().path,
+            Path::Slow,
+            "n={n}"
+        );
     }
 }
 
@@ -70,7 +87,15 @@ fn slow_path_trap_finalize_alone_proves_nothing_about_the_block() {
     let mut other = base.block_id;
     other[0] ^= 1;
     let mut c = slow.clone();
-    c.notar_aggregate = Some(fixture::sign(&sks, &fixture::most(10), CertType::Notarize { slot: base.slot, block_id: other }, base.shred_version));
+    c.notar_aggregate = Some(fixture::sign(
+        &sks,
+        &fixture::most(10),
+        CertType::Notarize {
+            slot: base.slot,
+            block_id: other,
+        },
+        base.shred_version,
+    ));
     assert_eq!(c.verify().unwrap_err(), bad_sig());
     // And claiming the other block instead fails the Finalize? No: Finalize names no block.
     // It's the Notarize part that must match the claimed block_id, which is what we check.
@@ -119,15 +144,39 @@ fn genuine_signatures_below_threshold_fail() {
     assert!(acc * 100 < total * 80);
     let fast = FinalityInput {
         validators: validators.clone(),
-        final_aggregate: fixture::sign(&sks, &signers, CertType::FinalizeFast { slot: base.slot, block_id: base.block_id }, base.shred_version),
+        final_aggregate: fixture::sign(
+            &sks,
+            &signers,
+            CertType::FinalizeFast {
+                slot: base.slot,
+                block_id: base.block_id,
+            },
+            base.shred_version,
+        ),
         notar_aggregate: None,
         ..base.clone()
     };
-    assert!(matches!(fast.verify().unwrap_err(), Error::Finality(finality::Error::NotEnoughStake { .. })));
+    assert!(matches!(
+        fast.verify().unwrap_err(),
+        Error::Finality(finality::Error::NotEnoughStake { .. })
+    ));
     // The same signers are enough for the slow path (60%).
     let slow = FinalityInput {
-        notar_aggregate: Some(fixture::sign(&sks, &signers, CertType::Notarize { slot: base.slot, block_id: base.block_id }, base.shred_version)),
-        final_aggregate: fixture::sign(&sks, &signers, CertType::Finalize { slot: base.slot }, base.shred_version),
+        notar_aggregate: Some(fixture::sign(
+            &sks,
+            &signers,
+            CertType::Notarize {
+                slot: base.slot,
+                block_id: base.block_id,
+            },
+            base.shred_version,
+        )),
+        final_aggregate: fixture::sign(
+            &sks,
+            &signers,
+            CertType::Finalize { slot: base.slot },
+            base.shred_version,
+        ),
         ..fast
     };
     assert_eq!(slow.verify().unwrap().path, Path::Slow);
@@ -162,10 +211,16 @@ fn malformed_sets_are_rejected() {
     assert_eq!(c.verify().unwrap_err(), Error::KeyLength(0));
     let mut c = real_finality();
     c.validators[0].bls_pubkey = vec![0xff; 48]; // not a curve point
-    assert_eq!(c.verify().unwrap_err(), Error::Finality(finality::Error::MissingRank(0)));
+    assert_eq!(
+        c.verify().unwrap_err(),
+        Error::Finality(finality::Error::MissingRank(0))
+    );
     let mut c = real_finality();
     c.final_aggregate.bitmap = vec![0, 2, 0, 0b11]; // claims 2 ranks, set has 1
-    assert_eq!(c.verify().unwrap_err(), Error::Finality(finality::Error::Decode));
+    assert_eq!(
+        c.verify().unwrap_err(),
+        Error::Finality(finality::Error::Decode)
+    );
 }
 
 // ---------- Whole block ----------
@@ -173,7 +228,9 @@ fn malformed_sets_are_rejected() {
 #[test]
 fn whole_blocks_verify() {
     for f in ["block_44000.json", "block_46718.json"] {
-        fixture::block_input(&json(f)).verify().unwrap_or_else(|e| panic!("{f}: {e}"));
+        fixture::block_input(&json(f))
+            .verify()
+            .unwrap_or_else(|e| panic!("{f}: {e}"));
     }
 }
 
@@ -188,7 +245,14 @@ fn real_transaction_is_proven_with_one_component() {
     // Only the transaction's component (one FEC set of 32 shreds), not all 128.
     assert_eq!(input.inclusion.shreds.len(), 32);
     assert_eq!(input.inclusion.fec_roots.len(), 4);
-    assert_eq!((out.tx.component_start_shred, out.tx.entry_index, out.tx.tx_index), (32, 0, 0));
+    assert_eq!(
+        (
+            out.tx.component_start_shred,
+            out.tx.entry_index,
+            out.tx.tx_index
+        ),
+        (32, 0, 0)
+    );
 
     // Public values: fixed offsets, as documented on `TxOutput::encode`.
     let pv = out.encode();
@@ -196,7 +260,10 @@ fn real_transaction_is_proven_with_one_component() {
     assert_eq!(&pv[1..33], &out.finality.validator_set_hash);
     assert_eq!(u64::from_be_bytes(pv[35..43].try_into().unwrap()), 46718);
     assert_eq!(&pv[43..75], &out.finality.block_id);
-    assert_eq!(u16::from_be_bytes(pv[104..106].try_into().unwrap()) as usize, out.tx.raw.len());
+    assert_eq!(
+        u16::from_be_bytes(pv[104..106].try_into().unwrap()) as usize,
+        out.tx.raw.len()
+    );
     assert_eq!(&pv[106..], out.tx.raw.as_slice());
 }
 
@@ -224,13 +291,22 @@ fn merkle_proof_sibling_changed_fails() {
 fn wrong_fec_root_or_parent_fails() {
     let mut input = real_tx();
     input.inclusion.fec_roots[3][0] ^= 1; // a root we don't even use for the tx
-    assert!(matches!(input.verify().unwrap_err(), Error::BlockIdMismatch { .. }));
+    assert!(matches!(
+        input.verify().unwrap_err(),
+        Error::BlockIdMismatch { .. }
+    ));
     let mut input = real_tx();
     input.inclusion.fec_roots.pop(); // pretend the block has 3 FEC sets
-    assert!(matches!(input.verify().unwrap_err(), Error::BlockIdMismatch { .. }));
+    assert!(matches!(
+        input.verify().unwrap_err(),
+        Error::BlockIdMismatch { .. }
+    ));
     let mut input = real_tx();
     input.inclusion.parent_slot -= 1;
-    assert!(matches!(input.verify().unwrap_err(), Error::BlockIdMismatch { .. }));
+    assert!(matches!(
+        input.verify().unwrap_err(),
+        Error::BlockIdMismatch { .. }
+    ));
 }
 
 #[test]

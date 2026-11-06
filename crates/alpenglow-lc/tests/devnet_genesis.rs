@@ -27,18 +27,24 @@ const GENESIS_RANKS: [usize; 11] = [0, 1, 2, 3, 4, 7, 9, 10, 14, 15, 16];
 const TODAY_RANKS: [usize; 11] = [0, 1, 2, 3, 4, 7, 10, 11, 17, 18, 19];
 
 fn fixture(path: &str) -> Value {
-    let p = format!("{}/../../fixtures/devnet/{path}", env!("CARGO_MANIFEST_DIR"));
+    let p = format!(
+        "{}/../../fixtures/devnet/{path}",
+        env!("CARGO_MANIFEST_DIR")
+    );
     serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
 }
 
 fn load() -> (RpcGenesisCert, ValidatorSet) {
     let cert = serde_json::from_value(fixture("genesis_cert.json")["result"].clone()).unwrap();
-    let set = serde_json::from_value(fixture("validator_set_1198.json")["validator_set"].clone()).unwrap();
+    let set = serde_json::from_value(fixture("validator_set_1198.json")["validator_set"].clone())
+        .unwrap();
     (cert, set)
 }
 
 /// Rank map for the reconstructed epoch-1167 set: genesis rank -> today's entry.
-fn reconstructed(set: &ValidatorSet) -> impl FnMut(usize) -> Option<(NonZero<u64>, cert::PopKey)> + '_ {
+fn reconstructed(
+    set: &ValidatorSet,
+) -> impl FnMut(usize) -> Option<(NonZero<u64>, cert::PopKey)> + '_ {
     move |rank| {
         let i = GENESIS_RANKS.iter().position(|&r| r == rank)?;
         let e = &set.entries[TODAY_RANKS[i]];
@@ -81,7 +87,10 @@ fn real_genesis_cert_with_one_bitmap_bit_flipped_fails() {
 fn real_genesis_cert_with_one_signature_bit_flipped_fails() {
     let (mut c, set) = load();
     c.signature.signature[150] ^= 1;
-    assert!(matches!(verify(&c, &set, SHRED_VERSION).unwrap_err(), Error::Cert(cert::VerifySig(_))));
+    assert!(matches!(
+        verify(&c, &set, SHRED_VERSION).unwrap_err(),
+        Error::Cert(cert::VerifySig(_))
+    ));
 }
 
 #[test]

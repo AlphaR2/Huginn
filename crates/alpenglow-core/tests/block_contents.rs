@@ -23,7 +23,12 @@ fn hex(v: &Value) -> Vec<u8> {
 
 fn block_shreds() -> (Value, Vec<Vec<u8>>) {
     let b = json("block_46718.json");
-    let shreds = b["data_shreds"].as_array().unwrap().iter().map(hex).collect();
+    let shreds = b["data_shreds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(hex)
+        .collect();
     (b, shreds)
 }
 
@@ -32,18 +37,37 @@ fn block_parses_into_header_entries_footer() {
     let (b, raw) = block_shreds();
     let shreds: Vec<Shred> = raw.iter().map(|s| Shred::parse(s).unwrap()).collect();
     let bytes = block::deshred(&shreds).unwrap();
-    let comps: Vec<Component> = bytes.iter().map(|c| block::parse_component(c).unwrap()).collect();
+    let comps: Vec<Component> = bytes
+        .iter()
+        .map(|c| block::parse_component(c).unwrap())
+        .collect();
 
     // First component: the header, naming the parent that the block_id's last leaf binds.
-    let parent_id: [u8; 32] = hex(&b["parent_block_final_cert"]["block_id"]).try_into().unwrap();
-    assert_eq!(comps[0], Component::Marker(Marker::Header { parent_slot: 46717, parent_block_id: parent_id }));
+    let parent_id: [u8; 32] = hex(&b["parent_block_final_cert"]["block_id"])
+        .try_into()
+        .unwrap();
+    assert_eq!(
+        comps[0],
+        Component::Marker(Marker::Header {
+            parent_slot: 46717,
+            parent_block_id: parent_id
+        })
+    );
     // Observed layout: header, entry batches (our tx), footer, then one last tick entry.
     assert_eq!(comps.len(), 4);
-    assert!(matches!(&comps[1], Component::Entries(e) if e.iter().map(|x| x.transactions.len()).sum::<usize>() == 1));
+    assert!(
+        matches!(&comps[1], Component::Entries(e) if e.iter().map(|x| x.transactions.len()).sum::<usize>() == 1)
+    );
     assert!(matches!(comps[2], Component::Marker(Marker::Footer(_))));
-    assert!(matches!(&comps[3], Component::Entries(e) if e.iter().all(|x| x.transactions.is_empty())));
+    assert!(
+        matches!(&comps[3], Component::Entries(e) if e.iter().all(|x| x.transactions.is_empty()))
+    );
     // Each component is padded to whole FEC sets: they end on shreds 31, 63, 95, 127.
-    let ends: Vec<u32> = shreds.iter().filter(|s| s.data_complete()).map(|s| s.index()).collect();
+    let ends: Vec<u32> = shreds
+        .iter()
+        .filter(|s| s.data_complete())
+        .map(|s| s.index())
+        .collect();
     assert_eq!(ends, [31, 63, 95, 127]);
 }
 
@@ -52,7 +76,10 @@ fn finds_the_memo_transfer_byte_for_byte() {
     let (_, raw) = block_shreds();
     let shreds: Vec<Shred> = raw.iter().map(|s| Shred::parse(s).unwrap()).collect();
     let bytes = block::deshred(&shreds).unwrap();
-    let comps: Vec<Component> = bytes.iter().map(|c| block::parse_component(c).unwrap()).collect();
+    let comps: Vec<Component> = bytes
+        .iter()
+        .map(|c| block::parse_component(c).unwrap())
+        .collect();
 
     let expected = json("tx_46718.json");
     let sig: [u8; 64] = hex(&expected["signature"]).try_into().unwrap();
@@ -62,10 +89,18 @@ fn finds_the_memo_transfer_byte_for_byte() {
     // What a destination chain cares about: who signed, which programs, what data.
     assert_eq!(tx.version, None); // legacy
     assert_eq!(tx.signers().len(), 1);
-    let programs: Vec<[u8; 32]> = tx.instructions.iter().map(|ix| *tx.program_id(ix).unwrap()).collect();
+    let programs: Vec<[u8; 32]> = tx
+        .instructions
+        .iter()
+        .map(|ix| *tx.program_id(ix).unwrap())
+        .collect();
     let system = [0u8; 32];
     assert_eq!(programs[0], system);
-    let memo_ix = tx.instructions.iter().find(|ix| tx.program_id(ix) != Some(&system)).unwrap();
+    let memo_ix = tx
+        .instructions
+        .iter()
+        .find(|ix| tx.program_id(ix) != Some(&system))
+        .unwrap();
     assert_eq!(memo_ix.data, b"huginn: hello from solana");
 }
 
@@ -73,7 +108,12 @@ fn finds_the_memo_transfer_byte_for_byte() {
 fn every_component_of_every_fixture_block_parses() {
     for f in ["block_44000.json", "block_46718.json"] {
         let b = json(f);
-        let raw: Vec<Vec<u8>> = b["data_shreds"].as_array().unwrap().iter().map(hex).collect();
+        let raw: Vec<Vec<u8>> = b["data_shreds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(hex)
+            .collect();
         let shreds: Vec<Shred> = raw.iter().map(|s| Shred::parse(s).unwrap()).collect();
         for c in block::deshred(&shreds).unwrap() {
             block::parse_component(&c).unwrap_or_else(|e| panic!("{f}: {e}"));
@@ -85,18 +125,39 @@ fn every_component_of_every_fixture_block_parses() {
 #[ignore]
 fn print_component_layout() {
     for f in ["block_44000.json", "block_46718.json"] {
-        let (_, raw) = (0, json(f)["data_shreds"].as_array().unwrap().iter().map(hex).collect::<Vec<_>>());
+        let (_, raw) = (
+            0,
+            json(f)["data_shreds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(hex)
+                .collect::<Vec<_>>(),
+        );
         let shreds: Vec<Shred> = raw.iter().map(|s| Shred::parse(s).unwrap()).collect();
         let summary: Vec<String> = block::deshred(&shreds)
             .unwrap()
             .iter()
             .map(|c| match block::parse_component(c).unwrap() {
                 Component::Marker(m) => format!("{:?}", m).chars().take(14).collect(),
-                Component::Entries(e) => format!("E{}/{}tx", e.len(), e.iter().map(|x| x.transactions.len()).sum::<usize>()),
+                Component::Entries(e) => format!(
+                    "E{}/{}tx",
+                    e.len(),
+                    e.iter().map(|x| x.transactions.len()).sum::<usize>()
+                ),
             })
             .collect();
-        let ends: Vec<u32> = shreds.iter().filter(|s| s.data_complete()).map(|s| s.index()).collect();
-        println!("{f}: {} components {:?}\n  ends at shreds {:?}", summary.len(), summary, ends);
+        let ends: Vec<u32> = shreds
+            .iter()
+            .filter(|s| s.data_complete())
+            .map(|s| s.index())
+            .collect();
+        println!(
+            "{f}: {} components {:?}\n  ends at shreds {:?}",
+            summary.len(),
+            summary,
+            ends
+        );
     }
 }
 
@@ -106,7 +167,12 @@ fn print_component_layout() {
 fn footer_in_shreds_equals_the_plugins_certificate() {
     for file in ["block_44000.json", "block_46718.json"] {
         let b = json(file);
-        let raw: Vec<Vec<u8>> = b["data_shreds"].as_array().unwrap().iter().map(hex).collect();
+        let raw: Vec<Vec<u8>> = b["data_shreds"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(hex)
+            .collect();
         let shreds: Vec<Shred> = raw.iter().map(|s| Shred::parse(s).unwrap()).collect();
         let bytes = block::deshred(&shreds).unwrap();
         let footers: Vec<block::Footer> = bytes
@@ -117,15 +183,30 @@ fn footer_in_shreds_equals_the_plugins_certificate() {
             })
             .collect();
         assert_eq!(footers.len(), 1, "{file}: one footer per block");
-        let cert = footers[0].final_cert.as_ref().expect("footer carries a finalization cert");
+        let cert = footers[0]
+            .final_cert
+            .as_ref()
+            .expect("footer carries a finalization cert");
 
         // Block S's footer finalizes its parent: the cert ledger-dump took from the plugin.
         let plugin = &b["parent_block_final_cert"];
         assert_eq!(cert.slot, plugin["slot"].as_u64().unwrap(), "{file}");
         assert_eq!(cert.block_id.to_vec(), hex(&plugin["block_id"]), "{file}");
-        assert_eq!(cert.final_aggregate.signature, hex(&plugin["final_aggregate"]["signature"]), "{file}");
-        assert_eq!(cert.final_aggregate.bitmap, hex(&plugin["final_aggregate"]["bitmap"]), "{file}");
-        assert_eq!(cert.notar_aggregate.is_some(), !plugin["notar_aggregate"].is_null(), "{file}");
+        assert_eq!(
+            cert.final_aggregate.signature,
+            hex(&plugin["final_aggregate"]["signature"]),
+            "{file}"
+        );
+        assert_eq!(
+            cert.final_aggregate.bitmap,
+            hex(&plugin["final_aggregate"]["bitmap"]),
+            "{file}"
+        );
+        assert_eq!(
+            cert.notar_aggregate.is_some(),
+            !plugin["notar_aggregate"].is_null(),
+            "{file}"
+        );
     }
 }
 

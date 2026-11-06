@@ -95,11 +95,18 @@ fn main() -> Result<()> {
             }
             // A cluster that starts on Alpenglow at genesis (e.g. the local test validator)
             // never migrated, so it returns an all-zero placeholder instead of a real cert.
-            let sig = result["signature"]["signature"].as_array().context("signature")?;
+            let sig = result["signature"]["signature"]
+                .as_array()
+                .context("signature")?;
             if sig.iter().all(|b| b.as_u64() == Some(0)) {
                 bail!("{} started on Alpenglow at genesis: the genesis cert is an all-zero placeholder", cluster.name());
             }
-            let path = write(&cli.out, cluster, "genesis_cert.json", &json!({ "result": result }))?;
+            let path = write(
+                &cli.out,
+                cluster,
+                "genesis_cert.json",
+                &json!({ "result": result }),
+            )?;
             println!("slot {} -> {}", result["block"]["slot"], path.display());
         }
         Cmd::ClusterInfo { cluster } => {
@@ -142,14 +149,24 @@ fn validator_set(rpc: &Rpc, out: &std::path::Path, cluster: Cluster) -> Result<(
             "getMultipleAccounts",
             json!([keys, {"encoding": "base64", "commitment": "finalized", "minContextSlot": slot}]),
         )?;
-        for ((pk, stake), acct) in chunk.iter().zip(accts["value"].as_array().context("value")?) {
-            let b64 = acct["data"][0].as_str().with_context(|| format!("no data for {pk}"))?;
+        for ((pk, stake), acct) in chunk
+            .iter()
+            .zip(accts["value"].as_array().context("value")?)
+        {
+            let b64 = acct["data"][0]
+                .as_str()
+                .with_context(|| format!("no data for {pk}"))?;
             let data = base64::engine::general_purpose::STANDARD.decode(b64)?;
-            let parsed = vote_account::parse(&data).with_context(|| format!("vote account {pk}"))?;
+            let parsed =
+                vote_account::parse(&data).with_context(|| format!("vote account {pk}"))?;
             v4 += (parsed.version == vote_account::VERSION_V4) as usize;
             with_key += parsed.bls_pubkey.is_some() as usize;
             candidates.push(Candidate {
-                vote_pubkey: bs58::decode(pk).into_vec()?.try_into().ok().context("vote pubkey")?,
+                vote_pubkey: bs58::decode(pk)
+                    .into_vec()?
+                    .try_into()
+                    .ok()
+                    .context("vote pubkey")?,
                 node_pubkey: parsed.node_pubkey,
                 stake: *stake,
                 bls_pubkey: parsed.bls_pubkey,
@@ -174,7 +191,12 @@ fn validator_set(rpc: &Rpc, out: &std::path::Path, cluster: Cluster) -> Result<(
         "commitment": hex::encode(set.commitment()),
         "validator_set": set,
     });
-    let path = write(out, cluster, &format!("validator_set_{epoch}.json"), &fixture)?;
+    let path = write(
+        out,
+        cluster,
+        &format!("validator_set_{epoch}.json"),
+        &fixture,
+    )?;
     println!(
         "epoch {epoch}: {total} vote accounts, {with_key} with BLS key, {} ranked, total stake {}, commitment {} -> {}",
         set.entries.len(),
@@ -205,7 +227,10 @@ fn cluster_info(rpc: &Rpc, out: &std::path::Path, cluster: Cluster) -> Result<()
         "shred_version_tally": tally,
     });
     let path = write(out, cluster, "cluster_info.json", &fixture)?;
-    println!("shred_version {shred_version} (tally {tally:?}) -> {}", path.display());
+    println!(
+        "shred_version {shred_version} (tally {tally:?}) -> {}",
+        path.display()
+    );
     Ok(())
 }
 

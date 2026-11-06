@@ -49,7 +49,10 @@ fn load() -> Block {
 
 /// Block id from raw shreds, with the parent's id taken from the parent's certificate.
 fn rebuild(b: &Block, shreds: &[Vec<u8>]) -> Result<Hash, shred::Error> {
-    let parsed = shreds.iter().map(|s| Shred::parse(s)).collect::<Result<Vec<_>, _>>()?;
+    let parsed = shreds
+        .iter()
+        .map(|s| Shred::parse(s))
+        .collect::<Result<Vec<_>, _>>()?;
     let roots = shred::fec_roots(b.slot, &parsed)?;
     shred::block_id(&roots, b.parent_slot, &b.parent_cert.block_id)
 }
@@ -58,13 +61,27 @@ fn rebuild(b: &Block, shreds: &[Vec<u8>]) -> Result<Hash, shred::Error> {
 fn shreds_rebuild_the_certified_block_id() {
     let b = load();
     // The embedded set is the one `fetch` saved for epoch 0.
-    let saved: ValidatorSet = serde_json::from_value(json("validator_set_0.json")["validator_set"].clone()).unwrap();
+    let saved: ValidatorSet =
+        serde_json::from_value(json("validator_set_0.json")["validator_set"].clone()).unwrap();
     assert_eq!(b.set, saved);
     // Both blocks are final, under the exact epoch-0 set.
-    assert_eq!(verify_footer(&b.cert, b.shred_version, &b.set).unwrap().slot, b.slot);
-    assert_eq!(verify_footer(&b.parent_cert, b.shred_version, &b.set).unwrap().slot, b.parent_slot);
+    assert_eq!(
+        verify_footer(&b.cert, b.shred_version, &b.set)
+            .unwrap()
+            .slot,
+        b.slot
+    );
+    assert_eq!(
+        verify_footer(&b.parent_cert, b.shred_version, &b.set)
+            .unwrap()
+            .slot,
+        b.parent_slot
+    );
     // The parent slot in the shred header matches the fixture.
-    assert_eq!(Shred::parse(&b.shreds[0]).unwrap().parent_slot(), Some(b.parent_slot));
+    assert_eq!(
+        Shred::parse(&b.shreds[0]).unwrap().parent_slot(),
+        Some(b.parent_slot)
+    );
 
     assert_eq!(rebuild(&b, &b.shreds).unwrap(), b.cert.block_id);
 }
@@ -123,11 +140,23 @@ fn wrong_parent_changes_the_block_id() {
     let shreds: Vec<_> = b.shreds.iter().map(|s| Shred::parse(s).unwrap()).collect();
     let roots = shred::fec_roots(b.slot, &shreds).unwrap();
     let parent = b.parent_cert.block_id;
-    assert_eq!(shred::block_id(&roots, b.parent_slot, &parent).unwrap(), b.cert.block_id);
-    assert_ne!(shred::block_id(&roots, b.parent_slot - 1, &parent).unwrap(), b.cert.block_id);
+    assert_eq!(
+        shred::block_id(&roots, b.parent_slot, &parent).unwrap(),
+        b.cert.block_id
+    );
+    assert_ne!(
+        shred::block_id(&roots, b.parent_slot - 1, &parent).unwrap(),
+        b.cert.block_id
+    );
     let mut other = parent;
     other[0] ^= 1;
-    assert_ne!(shred::block_id(&roots, b.parent_slot, &other).unwrap(), b.cert.block_id);
+    assert_ne!(
+        shred::block_id(&roots, b.parent_slot, &other).unwrap(),
+        b.cert.block_id
+    );
     // Dropping a FEC root changes both the tree and the count bound into the last leaf.
-    assert_ne!(shred::block_id(&roots[..2], b.parent_slot, &parent).unwrap(), b.cert.block_id);
+    assert_ne!(
+        shred::block_id(&roots[..2], b.parent_slot, &parent).unwrap(),
+        b.cert.block_id
+    );
 }

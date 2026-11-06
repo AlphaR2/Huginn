@@ -45,7 +45,11 @@ pub fn parse(data: &[u8]) -> Result<VoteAccountInfo> {
     } else {
         None
     };
-    Ok(VoteAccountInfo { version, node_pubkey, bls_pubkey })
+    Ok(VoteAccountInfo {
+        version,
+        node_pubkey,
+        bls_pubkey,
+    })
 }
 
 #[cfg(test)]

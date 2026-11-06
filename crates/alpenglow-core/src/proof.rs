@@ -111,7 +111,11 @@ pub fn validator_set_hash(validators: &[Validator]) -> Hash {
 }
 
 fn signature(a: &Aggregate) -> Result<bls12_381::G2Affine, Error> {
-    let bytes: &[u8; 96] = a.signature.as_slice().try_into().map_err(|_| Error::SignatureLength)?;
+    let bytes: &[u8; 96] = a
+        .signature
+        .as_slice()
+        .try_into()
+        .map_err(|_| Error::SignatureLength)?;
     Ok(finality::signature_from_compressed(bytes)?)
 }
 
@@ -120,10 +124,18 @@ impl FinalityInput {
     /// Notarize(block) at 60% *and* Finalize(slot) at 60%; Finalize names no block, so the
     /// Notarize part is what ties finality to `block_id`.
     pub fn verify(&self) -> Result<Finality, Error> {
-        if let Some(i) = self.validators.iter().position(|v| v.bls_pubkey.len() != 48) {
+        if let Some(i) = self
+            .validators
+            .iter()
+            .position(|v| v.bls_pubkey.len() != 48)
+        {
             return Err(Error::KeyLength(i));
         }
-        let total_stake = self.validators.iter().try_fold(0u64, |a, v| a.checked_add(v.stake)).ok_or(Error::EmptySet)?;
+        let total_stake = self
+            .validators
+            .iter()
+            .try_fold(0u64, |a, v| a.checked_add(v.stake))
+            .ok_or(Error::EmptySet)?;
         if total_stake == 0 {
             return Err(Error::EmptySet);
         }
@@ -137,19 +149,39 @@ impl FinalityInput {
                 let v = self.validators.get(r)?;
                 let key = match decoded[r] {
                     Some(k) => k,
-                    None => *decoded[r].insert(finality::pubkey_from_compressed(v.bls_pubkey.as_slice().try_into().ok()?).ok()?),
+                    None => *decoded[r].insert(
+                        finality::pubkey_from_compressed(v.bls_pubkey.as_slice().try_into().ok()?)
+                            .ok()?,
+                    ),
                 };
                 Some((v.stake, key))
             };
-            finality::verify_cert(&t, self.shred_version, &signature(a)?, &a.bitmap, self.validators.len(), total_stake, rank_map)
-                .map_err(Error::from)
+            finality::verify_cert(
+                &t,
+                self.shred_version,
+                &signature(a)?,
+                &a.bitmap,
+                self.validators.len(),
+                total_stake,
+                rank_map,
+            )
+            .map_err(Error::from)
         };
         let (slot, block_id) = (self.slot, self.block_id);
         let (path, signed_stake) = match &self.notar_aggregate {
-            None => (Path::Fast, check(CertType::FinalizeFast { slot, block_id }, &self.final_aggregate)?),
+            None => (
+                Path::Fast,
+                check(
+                    CertType::FinalizeFast { slot, block_id },
+                    &self.final_aggregate,
+                )?,
+            ),
             Some(notar) => {
                 check(CertType::Notarize { slot, block_id }, notar)?;
-                (Path::Slow, check(CertType::Finalize { slot }, &self.final_aggregate)?)
+                (
+                    Path::Slow,
+                    check(CertType::Finalize { slot }, &self.final_aggregate)?,
+                )
             }
         };
         Ok(Finality {
@@ -184,12 +216,19 @@ impl BlockInput {
     /// The data shreds rebuild exactly the certified `block_id`.
     pub fn verify_shreds(&self) -> Result<(), Error> {
         let f = &self.finality;
-        let shreds = self.data_shreds.iter().map(|b| Shred::parse(b)).collect::<Result<Vec<_>, _>>()?;
+        let shreds = self
+            .data_shreds
+            .iter()
+            .map(|b| Shred::parse(b))
+            .collect::<Result<Vec<_>, _>>()?;
         check_versions(&shreds, f.shred_version)?;
         let roots = shred::fec_roots(f.slot, &shreds)?;
         let computed = shred::block_id(&roots, self.parent_slot, &self.parent_block_id)?;
         if computed != f.block_id {
-            return Err(Error::BlockIdMismatch { computed, certified: f.block_id });
+            return Err(Error::BlockIdMismatch {
+                computed,
+                certified: f.block_id,
+            });
         }
         Ok(())
     }
@@ -235,13 +274,29 @@ pub struct IncludedTx {
 
 impl TxInclusion {
     /// Checks the inclusion against a block_id that is already known to be final.
-    pub fn verify(&self, slot: u64, block_id: &Hash, shred_version: u16) -> Result<IncludedTx, Error> {
+    pub fn verify(
+        &self,
+        slot: u64,
+        block_id: &Hash,
+        shred_version: u16,
+    ) -> Result<IncludedTx, Error> {
         let computed = shred::block_id(&self.fec_roots, self.parent_slot, &self.parent_block_id)?;
         if computed != *block_id {
-            return Err(Error::BlockIdMismatch { computed, certified: *block_id });
+            return Err(Error::BlockIdMismatch {
+                computed,
+                certified: *block_id,
+            });
         }
-        let sig: [u8; 64] = self.signature.as_slice().try_into().map_err(|_| Error::TxSignatureLength)?;
-        let shreds = self.shreds.iter().map(|b| Shred::parse(b)).collect::<Result<Vec<_>, _>>()?;
+        let sig: [u8; 64] = self
+            .signature
+            .as_slice()
+            .try_into()
+            .map_err(|_| Error::TxSignatureLength)?;
+        let shreds = self
+            .shreds
+            .iter()
+            .map(|b| Shred::parse(b))
+            .collect::<Result<Vec<_>, _>>()?;
         let first = shreds.first().ok_or(Error::TxNotFound)?;
         let in_block = |s: &Shred| -> Result<(), Error> {
             let set = s.fec_set_index() as usize / DATA_SHREDS_PER_FEC_SET;
@@ -275,7 +330,12 @@ impl TxInclusion {
             // component that fails to parse before reaching it simply doesn't count:
             // components are framed by the shreds' DATA_COMPLETE flags, not by each other.
             if let Ok(Some((e, t, tx))) = block::find_in_component(bytes, &sig) {
-                return Ok(IncludedTx { component_start_shred: start, entry_index: e as u32, tx_index: t as u32, raw: tx.raw.to_vec() });
+                return Ok(IncludedTx {
+                    component_start_shred: start,
+                    entry_index: e as u32,
+                    tx_index: t as u32,
+                    raw: tx.raw.to_vec(),
+                });
             }
             start += shreds_in(bytes, &shreds, start)?;
         }
@@ -283,8 +343,16 @@ impl TxInclusion {
     }
 
     /// Builds the smallest inclusion for `signature` from a whole block's data shreds.
-    pub fn from_block(data_shreds: &[Vec<u8>], parent_slot: u64, parent_block_id: Hash, signature: [u8; 64]) -> Result<Self, Error> {
-        let shreds = data_shreds.iter().map(|b| Shred::parse(b)).collect::<Result<Vec<_>, _>>()?;
+    pub fn from_block(
+        data_shreds: &[Vec<u8>],
+        parent_slot: u64,
+        parent_block_id: Hash,
+        signature: [u8; 64],
+    ) -> Result<Self, Error> {
+        let shreds = data_shreds
+            .iter()
+            .map(|b| Shred::parse(b))
+            .collect::<Result<Vec<_>, _>>()?;
         let slot = shreds.first().ok_or(Error::TxNotFound)?.slot();
         let fec_roots = shred::fec_roots(slot, &shreds)?;
         // Walk components, tracking which shreds each one spans.
@@ -340,7 +408,9 @@ pub struct TxOutput {
 impl TxInput {
     pub fn verify(&self) -> Result<TxOutput, Error> {
         let finality = self.finality.verify()?;
-        let tx = self.inclusion.verify(finality.slot, &finality.block_id, finality.shred_version)?;
+        let tx =
+            self.inclusion
+                .verify(finality.slot, &finality.block_id, finality.shred_version)?;
         // Parse once more for structural validity of the committed bytes.
         let mut r = block::Reader::new(&tx.raw);
         tx::parse(&mut r).map_err(block::Error::from)?;

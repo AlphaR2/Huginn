@@ -54,16 +54,27 @@ impl Ledger {
     pub fn open(ledger: &Path) -> Result<Ledger> {
         let path = ledger.join("rocksdb");
         // Read-only may open a subset of column families; we only need the two shred columns.
-        let db = DB::open_cf_for_read_only(&Options::default(), &path, ["data_shred", "code_shred"], false)
-            .with_context(|| format!("open {}", path.display()))?;
-        Ok(Ledger { path: ledger.to_path_buf(), db })
+        let db = DB::open_cf_for_read_only(
+            &Options::default(),
+            &path,
+            ["data_shred", "code_shred"],
+            false,
+        )
+        .with_context(|| format!("open {}", path.display()))?;
+        Ok(Ledger {
+            path: ledger.to_path_buf(),
+            db,
+        })
     }
 
     fn read(&self, column: &str, slot: u64) -> Result<Vec<Vec<u8>>> {
         let cf = self.db.cf_handle(column).context(column.to_string())?;
         let start = [slot.to_be_bytes(), 0u64.to_be_bytes()].concat();
         let mut out = Vec::new();
-        for kv in self.db.iterator_cf(cf, IteratorMode::From(&start, rocksdb::Direction::Forward)) {
+        for kv in self
+            .db
+            .iterator_cf(cf, IteratorMode::From(&start, rocksdb::Direction::Forward))
+        {
             let (k, v) = kv?;
             if k[..8] != slot.to_be_bytes() {
                 break;
@@ -82,8 +93,18 @@ impl ShredSource for Ledger {
     fn range(&self) -> Result<(u64, u64)> {
         let cf = self.db.cf_handle("data_shred").context("data_shred")?;
         let slot_of = |k: &[u8]| u64::from_be_bytes(k[..8].try_into().unwrap());
-        let first = self.db.iterator_cf(cf, IteratorMode::Start).next().transpose()?.context("empty ledger")?;
-        let last = self.db.iterator_cf(cf, IteratorMode::End).next().transpose()?.context("empty ledger")?;
+        let first = self
+            .db
+            .iterator_cf(cf, IteratorMode::Start)
+            .next()
+            .transpose()?
+            .context("empty ledger")?;
+        let last = self
+            .db
+            .iterator_cf(cf, IteratorMode::End)
+            .next()
+            .transpose()?
+            .context("empty ledger")?;
         Ok((slot_of(&first.0), slot_of(&last.0)))
     }
 
@@ -103,7 +124,9 @@ pub struct ShredFiles {
 
 impl ShredFiles {
     pub fn new(dir: &Path) -> ShredFiles {
-        ShredFiles { dir: dir.to_path_buf() }
+        ShredFiles {
+            dir: dir.to_path_buf(),
+        }
     }
 
     fn file(&self, slot: u64) -> PathBuf {
@@ -116,7 +139,12 @@ impl ShredFiles {
             return Ok(Vec::new());
         }
         let v = read_json(&path)?;
-        v[key].as_array().with_context(|| format!("{}: {key}", path.display()))?.iter().map(|h| Ok(hex::decode(h.as_str().context("hex")?)?)).collect()
+        v[key]
+            .as_array()
+            .with_context(|| format!("{}: {key}", path.display()))?
+            .iter()
+            .map(|h| Ok(hex::decode(h.as_str().context("hex")?)?))
+            .collect()
     }
 }
 
@@ -129,11 +157,18 @@ impl ShredSource for ShredFiles {
         let mut slots = Vec::new();
         for e in fs::read_dir(&self.dir).with_context(|| format!("read {}", self.dir.display()))? {
             let name = e?.file_name().to_string_lossy().to_string();
-            if let Some(slot) = name.strip_prefix("shreds_").and_then(|n| n.strip_suffix(".json")).and_then(|n| n.parse::<u64>().ok()) {
+            if let Some(slot) = name
+                .strip_prefix("shreds_")
+                .and_then(|n| n.strip_suffix(".json"))
+                .and_then(|n| n.parse::<u64>().ok())
+            {
                 slots.push(slot);
             }
         }
-        Ok((*slots.iter().min().context("no shreds_<slot>.json files")?, *slots.iter().max().unwrap()))
+        Ok((
+            *slots.iter().min().context("no shreds_<slot>.json files")?,
+            *slots.iter().max().unwrap(),
+        ))
     }
 
     fn data_shreds(&self, slot: u64) -> Result<Vec<Vec<u8>>> {
@@ -175,7 +210,8 @@ pub enum Certs {
 
 impl Certs {
     pub fn plugin(footers: &Path) -> Result<Certs> {
-        let text = fs::read_to_string(footers).with_context(|| format!("read {}", footers.display()))?;
+        let text =
+            fs::read_to_string(footers).with_context(|| format!("read {}", footers.display()))?;
         // The plugin appends while we read: skip a last line it hasn't finished writing.
         let complete = &text[..text.rfind('\n').map_or(0, |i| i + 1)];
         let mut certs = Vec::new();
@@ -199,7 +235,11 @@ impl Certs {
     fn for_slot(&self, src: &dyn ShredSource, slot: u64, last: u64) -> Result<Value> {
         match self {
             Certs::Shreds => child_cert(src, slot, last),
-            Certs::Plugin(certs) => certs.iter().find(|c| c["slot"] == slot).cloned().with_context(|| format!("no footer cert for slot {slot}")),
+            Certs::Plugin(certs) => certs
+                .iter()
+                .find(|c| c["slot"] == slot)
+                .cloned()
+                .with_context(|| format!("no footer cert for slot {slot}")),
         }
     }
 }
@@ -208,11 +248,18 @@ impl Certs {
 /// sources feed the same checks and the same fixture format). `None` if the block has no
 /// footer yet or the footer carries no certificate.
 pub fn footer_cert(data: &[Vec<u8>]) -> Result<Option<Value>> {
-    let shreds = data.iter().map(|b| Shred::parse(b)).collect::<Result<Vec<_>, _>>()?;
-    let Ok(components) = block::deshred(&shreds) else { return Ok(None) };
+    let shreds = data
+        .iter()
+        .map(|b| Shred::parse(b))
+        .collect::<Result<Vec<_>, _>>()?;
+    let Ok(components) = block::deshred(&shreds) else {
+        return Ok(None);
+    };
     for c in &components {
         if let Component::Marker(Marker::Footer(bytes)) = block::parse_component(c)? {
-            let Some(cert) = block::parse_footer(bytes)?.final_cert else { return Ok(None) };
+            let Some(cert) = block::parse_footer(bytes)?.final_cert else {
+                return Ok(None);
+            };
             let agg = |a: &alpenglow_core::proof::Aggregate| json!({ "signature": hex::encode(&a.signature), "bitmap": hex::encode(&a.bitmap) });
             return Ok(Some(json!({
                 "slot": cert.slot,
@@ -236,9 +283,14 @@ fn child_cert(src: &dyn ShredSource, slot: u64, last: u64) -> Result<Value> {
         }
         return footer_cert(&data)?
             .filter(|c| c["slot"] == slot)
-            .with_context(|| format!("child {child}'s footer is not written yet or has no cert for {slot}"));
+            .with_context(|| {
+                format!("child {child}'s footer is not written yet or has no cert for {slot}")
+            });
     }
-    bail!("no child block of {slot} in {} yet: it isn't finalized, or wait a slot", src.describe())
+    bail!(
+        "no child block of {slot} in {} yet: it isn't finalized, or wait a slot",
+        src.describe()
+    )
 }
 
 /// The newest slot a certificate can be found for.
@@ -252,7 +304,10 @@ pub fn newest_certified(src: &dyn ShredSource, certs: &Certs) -> Result<u64> {
                     return c["slot"].as_u64().context("slot");
                 }
             }
-            bail!("no footer with a certificate in the last 64 slots of {}", src.describe())
+            bail!(
+                "no footer with a certificate in the last 64 slots of {}",
+                src.describe()
+            )
         }
         Certs::Plugin(c) => c
             .iter()
@@ -284,17 +339,30 @@ pub struct Built {
 /// - every shred carries the cluster's shred version,
 /// - both certificates (slot and parent) verify against the epoch's validator set,
 /// - the block_id rebuilt from the shreds equals the certified one.
-pub fn build_fixture(src: &dyn ShredSource, slot: u64, sets: &Sets, certs: &Certs) -> Result<Built> {
+pub fn build_fixture(
+    src: &dyn ShredSource,
+    slot: u64,
+    sets: &Sets,
+    certs: &Certs,
+) -> Result<Built> {
     let (first, last) = src.range()?;
     let data = src.data_shreds(slot)?;
     let code = src.code_shreds(slot)?;
     if data.is_empty() {
-        bail!("no data shreds for slot {slot} ({} holds {first} ..= {last})", src.describe());
+        bail!(
+            "no data shreds for slot {slot} ({} holds {first} ..= {last})",
+            src.describe()
+        );
     }
-    let shreds = data.iter().map(|b| Shred::parse(b)).collect::<Result<Vec<_>, _>>()?;
+    let shreds = data
+        .iter()
+        .map(|b| Shred::parse(b))
+        .collect::<Result<Vec<_>, _>>()?;
     for b in &code {
         let s = Shred::parse(b)?;
-        if s.kind() != Kind::Code || s.merkle_root()? != shreds[s.fec_set_index() as usize].merkle_root()? {
+        if s.kind() != Kind::Code
+            || s.merkle_root()? != shreds[s.fec_set_index() as usize].merkle_root()?
+        {
             bail!("coding shred {} disagrees with its FEC set root", s.index());
         }
     }
@@ -305,17 +373,27 @@ pub fn build_fixture(src: &dyn ShredSource, slot: u64, sets: &Sets, certs: &Cert
     let cluster = read_json(&sets.dir.join("cluster_info.json"))?;
     let shred_version = cluster["shred_version"].as_u64().context("shred_version")? as u16;
     if let Some(s) = shreds.iter().find(|s| s.version() != shred_version) {
-        bail!("shred {} has version {}, cluster has {shred_version}", s.index(), s.version());
+        bail!(
+            "shred {} has version {}, cluster has {shred_version}",
+            s.index(),
+            s.version()
+        );
     }
 
     // The validator set of the slot's epoch. RPC only serves the current epoch's stakes,
     // so the set must have been fetched during that epoch.
     let epoch = slot / sets.slots_per_epoch;
     let set_path = sets.dir.join(format!("validator_set_{epoch}.json"));
-    let set_json = read_json(&set_path).with_context(|| format!("no set for epoch {epoch}: run `fetch validator-set --cluster local` during it"))?;
+    let set_json = read_json(&set_path).with_context(|| {
+        format!("no set for epoch {epoch}: run `fetch validator-set --cluster local` during it")
+    })?;
     let set: ValidatorSet = serde_json::from_value(set_json["validator_set"].clone())?;
     if set.epoch != epoch {
-        bail!("{} holds epoch {}, slot {slot} is in epoch {epoch}", set_path.display(), set.epoch);
+        bail!(
+            "{} holds epoch {}, slot {slot} is in epoch {epoch}",
+            set_path.display(),
+            set.epoch
+        );
     }
     // A parent in an earlier epoch would need that epoch's set too; not handled yet.
     if parent_slot / sets.slots_per_epoch != epoch {
@@ -326,14 +404,17 @@ pub fn build_fixture(src: &dyn ShredSource, slot: u64, sets: &Sets, certs: &Cert
     let raw_parent = match certs {
         Certs::Shreds => footer_cert(&data)?
             .filter(|c| c["slot"] == parent_slot)
-            .with_context(|| format!("slot {slot}'s footer has no cert for its parent {parent_slot}"))?,
+            .with_context(|| {
+                format!("slot {slot}'s footer has no cert for its parent {parent_slot}")
+            })?,
         Certs::Plugin(_) => certs.for_slot(src, parent_slot, last)?,
     };
     let raw_cert = certs.for_slot(src, slot, last)?;
     let cert: FooterCert = serde_json::from_value(raw_cert.clone())?;
     let parent_cert: FooterCert = serde_json::from_value(raw_parent.clone())?;
     verify_footer(&cert, shred_version, &set).with_context(|| format!("cert for {slot}"))?;
-    verify_footer(&parent_cert, shred_version, &set).with_context(|| format!("cert for {parent_slot}"))?;
+    verify_footer(&parent_cert, shred_version, &set)
+        .with_context(|| format!("cert for {parent_slot}"))?;
 
     let computed = shred::block_id(&roots, parent_slot, &parent_cert.block_id)?;
     let report = vec![
@@ -349,7 +430,10 @@ pub fn build_fixture(src: &dyn ShredSource, slot: u64, sets: &Sets, certs: &Cert
         format!("  certified block_id {}", hex::encode(cert.block_id)),
     ];
     if computed != cert.block_id {
-        bail!("{}\nblock_id mismatch: not writing a fixture", report.join("\n"));
+        bail!(
+            "{}\nblock_id mismatch: not writing a fixture",
+            report.join("\n")
+        );
     }
 
     let fixture = json!({
@@ -365,9 +449,15 @@ pub fn build_fixture(src: &dyn ShredSource, slot: u64, sets: &Sets, certs: &Cert
         // Coding shreds aren't needed to rebuild the block_id (checked above, not stored).
         "data_shreds": data.iter().map(hex::encode).collect::<Vec<_>>(),
     });
-    Ok(Built { slot, fixture, report })
+    Ok(Built {
+        slot,
+        fixture,
+        report,
+    })
 }
 
 pub fn read_json(path: &Path) -> Result<Value> {
-    Ok(serde_json::from_str(&fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?)?)
+    Ok(serde_json::from_str(
+        &fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?,
+    )?)
 }

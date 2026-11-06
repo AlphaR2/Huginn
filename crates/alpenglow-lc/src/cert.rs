@@ -69,7 +69,10 @@ impl RpcGenesisCert {
             .signature
             .as_slice()
             .try_into()
-            .map_err(|_| Error::SignatureLength { expected: 192, got: self.signature.signature.len() })?;
+            .map_err(|_| Error::SignatureLength {
+                expected: 192,
+                got: self.signature.signature.len(),
+            })?;
         Ok(UnverifiedCertificate {
             cert_type: CertificateType::Genesis(Block {
                 slot: self.block.slot,
@@ -104,14 +107,22 @@ pub struct Aggregate {
 }
 
 impl Aggregate {
-    fn to_unverified(&self, cert_type: CertificateType, shred_version: u16) -> Result<UnverifiedCertificate, Error> {
-        let bytes: [u8; 96] = self
-            .signature
-            .as_slice()
-            .try_into()
-            .map_err(|_| Error::SignatureLength { expected: 96, got: self.signature.len() })?;
+    fn to_unverified(
+        &self,
+        cert_type: CertificateType,
+        shred_version: u16,
+    ) -> Result<UnverifiedCertificate, Error> {
+        let bytes: [u8; 96] =
+            self.signature
+                .as_slice()
+                .try_into()
+                .map_err(|_| Error::SignatureLength {
+                    expected: 96,
+                    got: self.signature.len(),
+                })?;
         // Decompressing also checks the point is in G2, so junk bytes fail here.
-        let affine = SignatureAffine::try_from(SignatureCompressed(bytes)).map_err(Error::SignatureDecode)?;
+        let affine = SignatureAffine::try_from(SignatureCompressed(bytes))
+            .map_err(Error::SignatureDecode)?;
         Ok(UnverifiedCertificate {
             cert_type,
             signature: Signature::from(affine),
@@ -123,7 +134,10 @@ impl Aggregate {
 
 impl FooterCert {
     pub fn block(&self) -> Block {
-        Block { slot: self.slot, block_id: Hash::new_from_array(self.block_id) }
+        Block {
+            slot: self.slot,
+            block_id: Hash::new_from_array(self.block_id),
+        }
     }
 
     /// The certificates that must all verify for `block_id` to be final at `slot`.
@@ -147,7 +161,11 @@ impl FooterCert {
 }
 
 /// Verifies a footer's finality certificate. On success, the returned block is final.
-pub fn verify_footer(cert: &FooterCert, shred_version: u16, set: &ValidatorSet) -> Result<Block, Error> {
+pub fn verify_footer(
+    cert: &FooterCert,
+    shred_version: u16,
+    set: &ValidatorSet,
+) -> Result<Block, Error> {
     for c in cert.to_unverified(shred_version)? {
         verify(c, set)?;
     }
@@ -183,7 +201,13 @@ pub fn verify_with(
     rank_map: impl FnMut(usize) -> Option<(NonZero<u64>, PopKey)>,
 ) -> Result<Certificate, Error> {
     // `None`: no thread pool, so the sequential path. Same result, no rayon at runtime.
-    Ok(verify_certificate(cert, max_validators, total_stake, rank_map, None)?)
+    Ok(verify_certificate(
+        cert,
+        max_validators,
+        total_stake,
+        rank_map,
+        None,
+    )?)
 }
 
 /// Re-exported so callers can match on signature failures without naming Agave's crate.
@@ -211,7 +235,9 @@ mod tests {
 
     /// 10 validators with stakes 100, 90, ..., 10 (already in rank order). Total 550.
     fn setup() -> (Vec<Keypair>, ValidatorSet) {
-        let kps: Vec<Keypair> = (0..10).map(|i| Keypair::derive(&[i + 1; 32]).unwrap()).collect();
+        let kps: Vec<Keypair> = (0..10)
+            .map(|i| Keypair::derive(&[i + 1; 32]).unwrap())
+            .collect();
         let entries = kps
             .iter()
             .enumerate()
@@ -222,15 +248,29 @@ mod tests {
                 node_pubkey: [i as u8; 32],
             })
             .collect();
-        (kps, ValidatorSet { epoch: 1, total_stake: 550, entries })
+        (
+            kps,
+            ValidatorSet {
+                epoch: 1,
+                total_stake: 550,
+                entries,
+            },
+        )
     }
 
     fn genesis(slot: u64) -> CertificateType {
-        CertificateType::Genesis(Block { slot, block_id: Hash::new_from_array([7; 32]) })
+        CertificateType::Genesis(Block {
+            slot,
+            block_id: Hash::new_from_array([7; 32]),
+        })
     }
 
     /// A real certificate: each signer signs Agave's payload, signatures are summed.
-    fn signed(kps: &[Keypair], cert_type: CertificateType, signers: &[usize]) -> UnverifiedCertificate {
+    fn signed(
+        kps: &[Keypair],
+        cert_type: CertificateType,
+        signers: &[usize],
+    ) -> UnverifiedCertificate {
         let mut cert = UnverifiedCertificate {
             cert_type,
             signature: Signature([0; 192]),
@@ -263,7 +303,10 @@ mod tests {
         let cert = signed(&kps, genesis(5), &SIGNERS);
         let (payload, fallback) = cert.get_vote_payload();
         assert_eq!(fallback, None);
-        let block = Block { slot: 5, block_id: Hash::new_from_array([7; 32]) };
+        let block = Block {
+            slot: 5,
+            block_id: Hash::new_from_array([7; 32]),
+        };
         let vote = agave_votor_messages::vote::Vote::new_genesis_vote(block);
         assert_eq!(payload, get_vote_payload_to_sign(vote, SHRED));
     }
@@ -291,7 +334,10 @@ mod tests {
         cert.signature.0[100] ^= 1;
         // A flipped bit usually leaves the bytes off the curve, so it fails at decoding
         // rather than at the pairing check. Either way it must not verify.
-        assert!(matches!(verify(cert, &set).unwrap_err(), Error::Cert(VerifySig(_))));
+        assert!(matches!(
+            verify(cert, &set).unwrap_err(),
+            Error::Cert(VerifySig(_))
+        ));
     }
 
     #[test]
@@ -309,7 +355,10 @@ mod tests {
 
         // Same block, but claimed as a Notarize cert: different tag byte, different payload.
         let mut c = good;
-        c.cert_type = CertificateType::Notarize(Block { slot: 5, block_id: Hash::new_from_array([7; 32]) });
+        c.cert_type = CertificateType::Notarize(Block {
+            slot: 5,
+            block_id: Hash::new_from_array([7; 32]),
+        });
         assert_eq!(verify(c, &set).unwrap_err(), bad_sig());
     }
 
@@ -320,7 +369,13 @@ mod tests {
         assert!(verify(signed(&kps, genesis(5), &[0, 1, 2, 3, 4, 5, 6]), &set).is_ok());
         // Ranks 0..=5 hold 450 of 550 (81.8%): every signature is real, still rejected.
         let err = verify(signed(&kps, genesis(5), &[0, 1, 2, 3, 4, 5]), &set).unwrap_err();
-        assert!(matches!(err, Error::Cert(NotEnoughStake { aggregate_stake: 450, .. })));
+        assert!(matches!(
+            err,
+            Error::Cert(NotEnoughStake {
+                aggregate_stake: 450,
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -334,18 +389,29 @@ mod tests {
 
     fn compressed(cert: &UnverifiedCertificate) -> Aggregate {
         let affine = SignatureAffine::try_from(&cert.signature).unwrap();
-        Aggregate { signature: SignatureCompressed::from(affine).0.to_vec(), bitmap: cert.bitmap.clone() }
+        Aggregate {
+            signature: SignatureCompressed::from(affine).0.to_vec(),
+            bitmap: cert.bitmap.clone(),
+        }
     }
 
     const BLOCK_ID: [u8; 32] = [7; 32];
 
     fn block(slot: u64) -> Block {
-        Block { slot, block_id: Hash::new_from_array(BLOCK_ID) }
+        Block {
+            slot,
+            block_id: Hash::new_from_array(BLOCK_ID),
+        }
     }
 
     fn fast_footer(kps: &[Keypair], signers: &[usize]) -> FooterCert {
         let fin = signed(kps, CertificateType::FinalizeFast(block(5)), signers);
-        FooterCert { slot: 5, block_id: BLOCK_ID, final_aggregate: compressed(&fin), notar_aggregate: None }
+        FooterCert {
+            slot: 5,
+            block_id: BLOCK_ID,
+            final_aggregate: compressed(&fin),
+            notar_aggregate: None,
+        }
     }
 
     fn slow_footer(kps: &[Keypair], notar: CertificateType, signers: &[usize]) -> FooterCert {
@@ -363,7 +429,10 @@ mod tests {
     fn fast_footer_needs_80_percent() {
         let (kps, set) = setup();
         // Ranks 0..=5: 450 of 550 (81.8%).
-        assert_eq!(verify_footer(&fast_footer(&kps, &[0, 1, 2, 3, 4, 5]), SHRED, &set).unwrap(), block(5));
+        assert_eq!(
+            verify_footer(&fast_footer(&kps, &[0, 1, 2, 3, 4, 5]), SHRED, &set).unwrap(),
+            block(5)
+        );
         // Ranks 0..=4: 400 of 550 (72.7%). Enough for the slow path, not the fast one.
         let err = verify_footer(&fast_footer(&kps, &[0, 1, 2, 3, 4]), SHRED, &set).unwrap_err();
         assert!(matches!(err, Error::Cert(NotEnoughStake { .. })));
@@ -379,11 +448,17 @@ mod tests {
 
         // Ranks 0..=2: 270 of 550 (49%).
         let weak = slow_footer(&kps, CertificateType::Notarize(block(5)), &[0, 1, 2]);
-        assert!(matches!(verify_footer(&weak, SHRED, &set).unwrap_err(), Error::Cert(NotEnoughStake { .. })));
+        assert!(matches!(
+            verify_footer(&weak, SHRED, &set).unwrap_err(),
+            Error::Cert(NotEnoughStake { .. })
+        ));
 
         // The Finalize part is real, but the notarization is for another block. The footer
         // claims BLOCK_ID, so the notar signature doesn't match and the footer fails.
-        let other = Block { slot: 5, block_id: Hash::new_from_array([8; 32]) };
+        let other = Block {
+            slot: 5,
+            block_id: Hash::new_from_array([8; 32]),
+        };
         let swapped = slow_footer(&kps, CertificateType::Notarize(other), &signers);
         assert_eq!(verify_footer(&swapped, SHRED, &set).unwrap_err(), bad_sig());
     }
@@ -404,10 +479,16 @@ mod tests {
         c.final_aggregate.signature.push(0);
         assert_eq!(
             verify_footer(&c, SHRED, &set).unwrap_err(),
-            Error::SignatureLength { expected: 96, got: 97 }
+            Error::SignatureLength {
+                expected: 96,
+                got: 97
+            }
         );
         c.final_aggregate.signature = vec![0xff; 96];
-        assert!(matches!(verify_footer(&c, SHRED, &set).unwrap_err(), Error::SignatureDecode(_)));
+        assert!(matches!(
+            verify_footer(&c, SHRED, &set).unwrap_err(),
+            Error::SignatureDecode(_)
+        ));
     }
 
     #[test]
@@ -415,6 +496,9 @@ mod tests {
         let (kps, mut set) = setup();
         let cert = signed(&kps, genesis(5), &SIGNERS);
         set.entries.truncate(8);
-        assert!(matches!(verify(cert, &set).unwrap_err(), Error::Cert(AgaveError::Decode(_))));
+        assert!(matches!(
+            verify(cert, &set).unwrap_err(),
+            Error::Cert(AgaveError::Decode(_))
+        ));
     }
 }
