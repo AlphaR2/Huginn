@@ -5,7 +5,7 @@ This file has two parts:
 1. **Revisions 2 and 1 (current direction)**, below. Revision 2 widens Revision 1 from Base to any destination chain.
 2. **Version 1 (original plan)**, kept unchanged further down. Most of its reference material (sections 8.1 to 8.7, risks, references) still applies.
 
-Corrections to v1 found by reading Agave's source and real data are listed in [`docs/findings.md`](docs/findings.md). Where the two disagree, findings.md wins. The build order lives in [`CHECKLIST.md`](CHECKLIST.md).
+Corrections to v1 found by reading Agave's source and real data are listed in [`findings.md`](findings.md). Where the two disagree, findings.md wins. The build order lives in the build checklist.
 
 ---
 
@@ -53,7 +53,7 @@ We're changing the goal. Instead of a cross-chain escrow, we're building a gener
 | 3 scope | Layer 1 is in scope; escrow, fill program and bonds move to later apps. |
 | 4 architecture | Same offchain pipeline. Base side becomes `SolanaLightClient` + `SolanaTx`. |
 | 5 repo layout | Updated: see README. No `fill_program`; adds `relayer`, `contracts/examples`, optional `outbox`. |
-| 7 phases | Re-cut in `CHECKLIST.md`. |
+| 7 phases | Re-cut in the build checklist. |
 | 8.1–8.7 light client specs | Still valid, with the corrections in findings.md. |
 | 8.8 public values | Replaced by generic values: validatorSetHash, epoch, shredVersion, slot, blockId, finalityPath, tx message hash, plus the tx bytes or a commitment to them. |
 | 9–10 fill program, escrow | Deferred to the escrow app. |
@@ -227,7 +227,7 @@ Rule: `alpenglow-lc` must not depend on SP1, Solana RPC, or anything networked. 
 
 ## 6. Tools and versions
 
-Pin exact versions in `Cargo.toml`, `Anchor.toml` and `foundry.toml` on day one, and write them in `docs/findings.md`.
+Pin exact versions in `Cargo.toml`, `Anchor.toml` and `foundry.toml` on day one, and write them in `docs/research/findings.md`.
 
 | Tool | Use | Notes |
 |---|---|---|
@@ -861,7 +861,7 @@ Don't oversell. He'll spot it. "Near native" is fair. "Trustless" is not, yet.
 - [ ] Verify genesis certificate natively with `agave-bls-cert-verify`.
 - [ ] Flip one bit, confirm it fails.
 - [ ] Try the same inside a minimal SP1 program.
-- [ ] Write results in `docs/findings.md`. Make the go/no-go call.
+- [ ] Write results in `docs/research/findings.md`. Make the go/no-go call.
 
 ---
 

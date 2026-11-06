@@ -92,7 +92,7 @@ Then copy the new `SHRED_VERSION` and `VALIDATOR_SET_HASH` into `huginn-evm/.env
 
 ## 2. A Groth16 proof on a VPS (one hour, then delete the VPS)
 
-**Why:** gnark loads a 5.9 GB proving key plus a 2.4 GB circuit, and needs working space on top. Succinct recommends 32 GB of RAM; on an 18 GB laptop it is killed (see `docs/findings.md`). A VPS with 32 GB does it, and you delete it after.
+**Why:** gnark loads a 5.9 GB proving key plus a 2.4 GB circuit, and needs working space on top. Succinct recommends 32 GB of RAM; on an 18 GB laptop it is killed (see `docs/research/findings.md`). A VPS with 32 GB does it, and you delete it after.
 
 **Machine:** Ubuntu 24.04, **≥32 GB RAM, ≥8 vCPUs, ≥100 GB disk** (circuits 14 GB + builds ~12 GB + Docker). Any provider works. Examples:
 - Hetzner Cloud CCX33: 8 dedicated vCPU, 32 GB;

@@ -1,7 +1,7 @@
 //! Adversarial tests written by an outside reviewer (not part of the original build).
 //! Each test names the attack it tries. Tests marked DEMONSTRATES prove a *trust
 //! assumption*: they succeed in breaking the verifier when the assumption is violated, so
-//! the assumption has to hold elsewhere (see docs/adversarial-report.md).
+//! the assumption has to hold elsewhere (see docs/research/adversarial-report.md).
 
 use {
     alpenglow_core::{

@@ -8,7 +8,7 @@ license = "Apache-2.0"
 version = "0.1.0"
 
 [workspace.dependencies]
-# Pinned exactly. Bump together and log in docs/findings.md.
+# Pinned exactly. Bump together and log in docs/research/findings.md.
 agave-bls-cert-verify = { version = "=4.4.0", features = ["agave-unstable-api"] }
 agave-votor-messages = { version = "=4.4.0", features = ["agave-unstable-api"] }
 solana-hash = "=4.7.0"

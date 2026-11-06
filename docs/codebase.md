@@ -57,11 +57,10 @@ A rule that runs through the whole repo: **`alpenglow-core` never trusts itself.
 | File | What it is |
 |---|---|
 | `README.md` | One-page pitch, trust model and layout. |
-| `PLAN.md` | The design: Revision 1 and 2 (direction), then the original v1 plan with its numbered sections (§8.x is referenced from code comments). |
-| `CHECKLIST.md` | Build order. Each item is ticked only once it's done and explained. |
-| `docs/findings.md` | **The lab notebook.** Every fact we confirmed against real code or data: pinned versions, byte layouts, surprises, and how each was checked. When a code comment says "see findings", it means here. |
+| `docs/architecture.md` | How the whole thing works, in plain terms: the data flow, what is proven, what is trusted. Start here. |
+| `docs/security.md` | Threat model, outside reviews, what was fixed, what is still open. |
+| `docs/research/` | The lab notebook and design history: `findings.md` (every fact confirmed against real code or data; when a code comment says "see findings", it means this file), `plan.md` (original design, §8.x is referenced from code comments), `adversarial-report.md` (the full outside reviews). |
 | `docs/codebase.md` | This file. |
-| `docs/research/` | Placeholder for the original research docs. |
 | `Cargo.toml` | The Rust workspace: four crates (`alpenglow-core`, `alpenglow-lc`, `fetch`, `ledger-dump`), shared pinned dependency versions, and a `[patch]` that swaps in SP1's version of `bls12_381` (see `alpenglow-core`). |
 | `Cargo.lock` | Exact versions resolved. Committed on purpose: reproducible builds. |
 | `.gitignore` | Ignores build output, the local ledger (`.local-ledger/`, gigabytes) and the growing `fixtures/local/footers.jsonl`. |

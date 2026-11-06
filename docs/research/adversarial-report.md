@@ -147,3 +147,15 @@ Added by the maintainers after the review. The Solidity PoCs now run: `forge tes
 | UX | Naming, one setup guide | **Fixed (2026-11-05).** The local folder is now `huginn-evm`, like the repo, the crate and the CLI; the app is no longer called "the relayer". `docs/run.md` part 1 is the one setup guide (tools with install commands, then `huginn-evm run doctor` first); the READMEs and `demo.md` link to it |
 
 The deployment binding changed the app's order: the contracts are deployed **before** the memo is sent (the memo names the greeter's address), so the guided view has five stages (Set up, Send, Finalize, Prove, Verify).
+
+## Round two (2026-11-06): attacks on the fixes
+
+A second review attacked the round-one fixes (`test/Adversarial2.t.sol` in huginn-evm). Three weaknesses were shown to work; all are now handled.
+
+| # | Finding | Status |
+|---|---|---|
+| R2-1 | The cancel is a race: both the command and its cancel are public once final, and whoever is relayed first wins. | **Documented as a limit** (`SolanaControlled`'s comment, `test_LIMIT_cancelIsARaceNotAGuarantee`). Cannot be fixed in the contract: make revocable commands conditional. |
+| R2-2 | A command that reverts blocks every later command until cancelled; anyone who can make it revert can stall the queue. | **Fixed.** A failing command logs `CommandFailed` and spends its nonce. A relayer who starves it of gas makes the whole call revert instead (checked by a gas sweep test). `run` is callable only by the contract itself. |
+| R2-3 | A block recorded while a bad validator set was in force could never be cleared, so the real proof for that slot was refused afterwards. | **Fixed.** `finalizedBlock` is keyed by (slot, validator set). Two different blocks under the same set is still refused (`ConflictingBlock`). |
+
+The reviewer's other tests held: the set delay can't be shortened, strangers can't touch sets or ownership, odd nonce spellings and address case give no second nonce.

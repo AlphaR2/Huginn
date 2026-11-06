@@ -8,3 +8,16 @@ zk/program/target/
 zk/prover/target/
 zk/program/Cargo.lock
 fixtures/proofs/*.bin
+
+# Personal working notes (study plan, build checklist, journal). Never published.
+notes/
+scratch/
+# Generated results: proofs, logs, coverage, profiles
+fixtures/proofs/*
+!fixtures/proofs/.gitkeep
+*.log
+test-results/
+coverage/
+lcov.info
+*.profraw
+.DS_Store
