@@ -333,7 +333,7 @@ The proof output's layout (`TxOutput::encode`) is the contract between huginn an
 | **Rank** | A validator's position in the sorted set; bitmaps index by rank. |
 | **Shred version** | A number identifying the cluster, inside every signed vote, so votes can't be replayed across clusters. |
 | **Shred** | A ~1.2 KB packet of a block. **Data shreds** carry content; **coding shreds** are error-correction copies. |
-| **FEC set** | 32 data shreds (+ coding) sharing one Merkle root. |
+| **FEC set** | FEC is *Forward Error Correction*. A group of 32 data shreds plus 32 coding shreds made from them (extra redundancy, like a parity disk). Any 32 of the 64 are enough to rebuild all the data, so a receiver that loses packets can repair them without asking again. The whole set shares one Merkle root, which the leader signs. |
 | **block_id** | The double Merkle root over FEC roots + parent info. It's what votes sign. |
 | **Component** | A unit of block content: an entry batch or a marker. |
 | **Entry** | A batch of transactions plus a Proof-of-History hash. |
