@@ -71,9 +71,9 @@ fn fixture_from_shred_files_proves_the_memo_final_and_included() {
 
 #[test]
 fn the_parent_alone_is_not_enough() {
-    // SLOT + 1 has no child in the files, so its certificate can't be found.
+    // SLOT + 1 has no later block in the files, so its certificate cannot be found.
     let err = build_fixture(&files(), SLOT + 1, &sets(), &Certs::Shreds)
         .err()
         .unwrap();
-    assert!(format!("{err:#}").contains("no child block"), "{err:#}");
+    assert!(format!("{err:#}").contains("no block after"), "{err:#}");
 }

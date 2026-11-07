@@ -145,3 +145,19 @@ pub fn write_shred_file(
     std::fs::write(&path, serde_json::to_string(&v)? + "\n")?;
     Ok(path)
 }
+
+/// The slot of the certificate in this block's footer, if it carries one.
+pub fn footer_cert_slot(data_shreds: &[Vec<u8>]) -> Option<u64> {
+    use alpenglow_core::block::{self, Component, Marker};
+    let parsed = data_shreds
+        .iter()
+        .map(|b| Shred::parse(b))
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .ok()?;
+    for c in block::deshred(&parsed).ok()? {
+        if let Component::Marker(Marker::Footer(bytes)) = block::parse_component(&c).ok()? {
+            return block::parse_footer(bytes).ok()?.final_cert.map(|c| c.slot);
+        }
+    }
+    None
+}

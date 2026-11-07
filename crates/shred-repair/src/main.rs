@@ -4,7 +4,9 @@
 use {
     anyhow::{bail, ensure, Context, Result},
     clap::{Parser, Subcommand},
-    shred_repair::{client::Client, fetch_block, fetch_shape, fetch_slot, write_shred_file},
+    shred_repair::{
+        client::Client, fetch_block, fetch_shape, fetch_slot, footer_cert_slot, write_shred_file,
+    },
     std::{net::SocketAddr, path::PathBuf},
 };
 
@@ -80,28 +82,78 @@ fn hash(s: &str) -> Result<[u8; 32]> {
         .map_err(|_| anyhow::anyhow!("block id must be 32 bytes of hex"))
 }
 
-fn client(cli: &Cli) -> Result<Client> {
-    let peer = match (&cli.peer, &cli.peer_id) {
-        (Some(addr), Some(id)) => Peer {
+/// The peers to try, in order: the one named, or every node `getClusterNodes` lists.
+fn candidates(cli: &Cli) -> Result<Vec<Peer>> {
+    match (&cli.peer, &cli.peer_id) {
+        (Some(addr), Some(id)) => Ok(vec![Peer {
             addr: *addr,
             id: bs58::decode(id)
                 .into_vec()?
                 .try_into()
                 .map_err(|_| anyhow::anyhow!("bad --peer-id"))?,
-        },
-        (None, None) => peers(&cli.rpc)?
-            .into_iter()
-            .next()
-            .context("no peer with a serveRepair address")?,
+        }]),
+        (None, None) => {
+            let all = peers(&cli.rpc)?;
+            ensure!(!all.is_empty(), "no peer with a serveRepair address");
+            Ok(all)
+        }
         _ => bail!("--peer and --peer-id go together"),
-    };
-    let c = Client::new(peer.addr, peer.id)?;
-    eprintln!(
-        "asking {} as {}",
-        peer.addr,
-        bs58::encode(c.identity()).into_string()
-    );
-    Ok(c)
+    }
+}
+
+/// Slots with a block, from `from` to `to`, per the cluster's RPC.
+fn produced(rpc: &str, from: u64, to: u64) -> Result<Vec<u64>> {
+    let body = serde_json::json!({"jsonrpc":"2.0","id":1,"method":"getBlocks","params":[from, to, {"commitment":"confirmed"}]});
+    let v: serde_json::Value = ureq::post(rpc).send_json(body)?.into_json()?;
+    Ok(v["result"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|x| x.as_u64()).collect())
+        .unwrap_or_default())
+}
+
+/// How many peers to try before giving up. A silent peer costs about 9 seconds.
+const MAX_PEERS: usize = 8;
+
+/// Runs `job` against each candidate peer until one succeeds.
+fn with_peer<T>(cli: &Cli, mut job: impl FnMut(&mut Client, &Peer) -> Result<T>) -> Result<T> {
+    let mut last = None;
+    for peer in candidates(cli)?.into_iter().take(MAX_PEERS) {
+        let mut c = Client::new(peer.addr, peer.id)?;
+        eprintln!(
+            "asking {} ({}) as {}",
+            peer.addr,
+            bs58::encode(peer.id).into_string(),
+            bs58::encode(c.identity()).into_string()
+        );
+        match job(&mut c, &peer) {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                eprintln!("  that peer failed: {e:#}");
+                last = Some(e);
+            }
+        }
+    }
+    Err(last.unwrap()).context(format!(
+        "none of the first {MAX_PEERS} peers could serve this"
+    ))
+}
+
+/// A block that was only just produced may not be complete on a peer yet: ask again.
+fn fetch_slot_patiently(c: &mut Client, slot: u64) -> Result<Vec<Vec<u8>>> {
+    let mut last = None;
+    for attempt in 0..6 {
+        match fetch_slot(c, slot) {
+            Ok(v) => return Ok(v),
+            Err(e) => {
+                if attempt < 5 {
+                    eprintln!("  slot {slot} not complete there yet ({e:#}); retrying");
+                    std::thread::sleep(std::time::Duration::from_secs(3));
+                }
+                last = Some(e);
+            }
+        }
+    }
+    Err(last.unwrap())
 }
 
 fn main() -> Result<()> {
@@ -113,8 +165,8 @@ fn main() -> Result<()> {
             }
         }
         Cmd::Shape { slot, block_id } => {
-            let mut c = client(&cli)?;
-            let s = fetch_shape(&mut c, *slot, hash(block_id)?)?;
+            let id = hash(block_id)?;
+            let s = with_peer(&cli, |c, _| fetch_shape(c, *slot, id))?;
             println!(
                 "slot {slot}: {} FEC sets, parent slot {} ({}), every root proven against the block id",
                 s.fec_set_count, s.parent_slot, hex::encode(s.parent_block_id)
@@ -125,36 +177,71 @@ fn main() -> Result<()> {
             block_id,
             out,
         } => {
-            let mut c = client(&cli)?;
-            let shreds = match block_id {
-                Some(id) => {
-                    let (shape, shreds) = fetch_block(&mut c, *slot, hash(id)?)?;
+            let (child, served_by) = with_peer(&cli, |c, peer| {
+                let shreds = match block_id {
+                    Some(id) => {
+                        let (shape, shreds) = fetch_block(c, *slot, hash(id)?)?;
+                        println!(
+                            "slot {slot}: {} data shreds, {} sets, all match the block id",
+                            shreds.len(),
+                            shape.fec_set_count
+                        );
+                        shreds
+                    }
+                    None => {
+                        let shreds = fetch_slot_patiently(c, *slot)?;
+                        println!(
+                            "slot {slot}: {} data shreds (complete, block id not yet known)",
+                            shreds.len()
+                        );
+                        shreds
+                    }
+                };
+                println!("wrote {}", write_shred_file(out, *slot, &shreds)?.display());
+                // The certificate for this block is in the footer of some later block: usually
+                // the next, under load a few later. Walk forward until one carries it.
+                let mut next = *slot + 1;
+                let mut waited = 0;
+                let child = loop {
+                    let Some(&s) = produced(&cli.rpc, next, next + 12)?.first() else {
+                        waited += 1;
+                        ensure!(
+                            waited < 30,
+                            "no later block appeared on {} within a minute",
+                            cli.rpc
+                        );
+                        std::thread::sleep(std::time::Duration::from_secs(2));
+                        continue;
+                    };
+                    let shreds =
+                        fetch_slot_patiently(c, s).with_context(|| format!("later slot {s}"))?;
+                    let found = footer_cert_slot(&shreds) == Some(*slot);
                     println!(
-                        "slot {slot}: {} data shreds, {} sets, all match the block id",
+                        "slot {s}: {} data shreds ({})",
                         shreds.len(),
-                        shape.fec_set_count
+                        if found {
+                            format!("its footer carries the certificate for {slot}")
+                        } else {
+                            format!("its footer has no certificate for {slot}; continuing")
+                        }
                     );
-                    shreds
-                }
-                None => {
-                    let shreds = fetch_slot(&mut c, *slot)?;
-                    println!(
-                        "slot {slot}: {} data shreds (complete, block id not yet known)",
-                        shreds.len()
+                    println!("wrote {}", write_shred_file(out, s, &shreds)?.display());
+                    if found {
+                        break shreds;
+                    }
+                    next = s + 1;
+                    ensure!(
+                        next <= *slot + 24,
+                        "no footer within 24 blocks of {slot} carries its certificate"
                     );
-                    shreds
-                }
-            };
-            println!("wrote {}", write_shred_file(out, *slot, &shreds)?.display());
-            let child = *slot + 1;
-            let shreds =
-                fetch_slot(&mut c, child).with_context(|| format!("child slot {child}"))?;
-            println!(
-                "slot {child}: {} data shreds (carries the certificate for {slot})",
-                shreds.len()
-            );
-            println!("wrote {}", write_shred_file(out, child, &shreds)?.display());
-            ensure!(!shreds.is_empty(), "empty child");
+                };
+                Ok((
+                    child,
+                    format!("{} {}", peer.addr, bs58::encode(peer.id).into_string()),
+                ))
+            })?;
+            ensure!(!child.is_empty(), "empty child");
+            println!("served by {served_by}");
             println!("next: ledger-dump --shreds {} --slot {slot}", out.display());
         }
     }

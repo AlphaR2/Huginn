@@ -275,20 +275,28 @@ pub fn footer_cert(data: &[Vec<u8>]) -> Result<Option<Value>> {
 /// The certificate for `slot`, from the footer of the first later block that names it as
 /// parent. Usually slot + 1; skipped slots push it further.
 fn child_cert(src: &dyn ShredSource, slot: u64, last: u64) -> Result<Value> {
-    for child in slot + 1..=last.min(slot + 64) {
-        let data = src.data_shreds(child)?;
-        let Some(first) = data.first() else { continue };
-        if Shred::parse(first)?.parent_slot() != Some(slot) {
+    // A footer carries the certificate of the newest block that was final when it was
+    // written: often the parent, but under load a few blocks later. The certificate proves
+    // itself (BLS over the block's id), so any later block's footer will do.
+    let mut seen = 0;
+    for later in slot + 1..=last.min(slot + 64) {
+        let data = src.data_shreds(later)?;
+        if data.is_empty() {
             continue;
         }
-        return footer_cert(&data)?
-            .filter(|c| c["slot"] == slot)
-            .with_context(|| {
-                format!("child {child}'s footer is not written yet or has no cert for {slot}")
-            });
+        seen += 1;
+        if let Some(c) = footer_cert(&data)?.filter(|c| c["slot"] == slot) {
+            return Ok(c);
+        }
+    }
+    if seen == 0 {
+        bail!(
+            "no block after {slot} in {} yet: it isn't finalized, or wait a slot",
+            src.describe()
+        )
     }
     bail!(
-        "no child block of {slot} in {} yet: it isn't finalized, or wait a slot",
+        "none of the {seen} block(s) after {slot} in {} carries its certificate yet: fetch a few more",
         src.describe()
     )
 }

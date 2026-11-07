@@ -79,14 +79,9 @@ cd app && cargo build --release && cd ..
 
 ### A fresh validator is a new chain
 
-The `fixtures/local` files in huginn (validator set, shred version) belong to **this repo's** local chain. A fresh `.local-ledger` makes a new chain with its own keys, so refresh them once it's running:
+Nothing to do by hand: when the app deploys, it reads the chain's shred version and current validator set from the validator's own RPC (into `huginn-evm/proofs/local/`), so a fresh `.local-ledger` just works. The repo's tracked `fixtures/local` files belong to an older chain and are used only by the tests.
 
-```bash
-cargo run --release -p fetch -- cluster-info --cluster local
-cargo run --release -p fetch -- validator-set --cluster local
-```
-
-Then copy the new `SHRED_VERSION` and `VALIDATOR_SET_HASH` into `huginn-evm/.env`.
+To run the same flow against public devnet and Base Sepolia on a VPS, with real Groth16 proofs: `huginn-evm/docs/devnet-runbook.md`.
 
 ---
 
