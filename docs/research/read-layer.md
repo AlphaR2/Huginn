@@ -78,12 +78,47 @@ Rules (from the source excerpts I read):
 
 This fits Huginn: the certificate gives the `block_id`; `ParentFecSetCount` gives the set count; `FecSetRoot` for each set gives all roots with proofs against that id, so the whole `block_id` can be rebuilt; `WindowIndexForBlockId` fetches only the data shreds that hold the target transaction. No subscription, no replay problem, works for past slots, and each answer can be checked against the certified `block_id`, so peers are untrusted.
 
-### Open questions (unverified)
-- The exact wire format of `BlockIdRepairResponse` and the nonce position (in `repair_response`, not read).
-- Whether the response to `FecSetRoot` contains enough to rebuild the double Merkle tree without the shreds themselves (it returns each root and a proof; the final count leaf needs `ParentFecSetCount`).
-- How long peers keep a slot (`minimumLedgerSlot` on the local validator was about 4,800 slots behind; a normal validator keeps far more, but the exact default is unverified).
-- Whether this is in the Agave 4.4.0 release or only on master. The local 4.4.0 node reports `serveRepair`, but the request set itself is unverified for 4.4.0.
-- Devnet and mainnet peers may rate-limit or drop requests from unknown identities; the ping/pong handshake needs UDP reachability both ways.
+### Verified against Agave v4.4.1 source (2026-11-07)
+
+Read from a shallow clone of `v4.4.1` (`5bb3040`). `git diff v4.4.0 v4.4.1` shows **no change** under `core/src/repair` or `ledger/src`, so the same holds for 4.4.0, the version the local validator and the pinned crates use.
+
+**The requests exist in 4.4.x.** `RepairProtocol` (`core/src/repair/serve_repair.rs`), in wire order (a `u32` little-endian variant tag, serialized with wincode, so fields follow in declaration order):
+
+| Tag | Variant | Fields after the header |
+|---|---|---|
+| 7 | `Pong` | (answer to a ping) |
+| 8 | `WindowIndex` | `slot u64`, `shred_index u64` |
+| 9 | `HighestWindowIndex` | `slot`, `shred_index` |
+| 10 | `Orphan` | `slot` |
+| 11 | `AncestorHashes` | `slot` (rejected as unsupported when signature-checked) |
+| 12 | `ParentAndFecSetCount` | `slot u64`, `block_id [u8;32]` |
+| 13 | `FecSetRoot` | `slot u64`, `block_id`, `fec_set_index u32` |
+| 14 | `WindowIndexForBlockId` | `slot u64`, `shred_index u32`, `block_id` |
+
+(Tags 0 to 6 are unsigned legacy variants, always refused. Tag numbers follow declaration order and the `random_range(7..=14)` in the ABI sampler; confirm with a round-trip test when writing the client.)
+
+**Request header** (`RepairRequestHeader`, directly after the tag): `signature` (64) | `sender` (32) | `recipient` (32) | `timestamp u64` (ms) | `nonce u32`.
+- Signed data = the 4 tag bytes + everything after the signature. The signature sits at bytes 4..68 (`repair_proto_to_bytes`).
+- The receiver checks: `recipient` is its own identity (else `IdMismatch`); timestamp within 10 minutes (`TimeSkew`); signature valid for `sender` (`SigVerify`).
+
+**Handshake.** A request from an unverified (identity, address) pair is **dropped** and the node replies with a signed `Ping` (`RepairResponse::Ping` or `BlockIdRepairResponse::Ping`). The client signs a `Pong` over the ping's token with the same identity and sends it back; after that, requests from that address are served. The pong is cached for 1280 seconds. A pong is a `RepairProtocol::Pong` (tag 7).
+
+**Responses.**
+- `WindowIndexForBlockId` returns **the raw data shred bytes with a 4-byte little-endian nonce appended** (`repair_response_packet_from_bytes`). That is the same shred layout `alpenglow-core::shred` already parses. A packet is at most `PACKET_DATA_SIZE` (1232 bytes), and a data shred with a proof is 1203 + headers, so it fits.
+- `ParentAndFecSetCount` and `FecSetRoot` return a wincode-serialized `BlockIdRepairResponse`: `ParentFecSetCount { fec_set_count u32, parent_info (slot, parent_block_id), parent_proof bytes }`, `FecSetRoot { fec_set_root (20-byte entry), fec_set_proof bytes }` or `Ping { ping }`. The nonce is passed to the same packet builder; I did not read the exact byte placement for these two, assume it is appended the same way and confirm with a capture.
+- Everything is **self-authenticating against the `block_id`** (`BlockIdRepairType::verify_response`): the parent proof verifies the leaf `hash(parent_slot | parent_block_id | fec_set_count)` as the last leaf of the double tree; each `FecSetRoot` proof verifies the set's root at leaf `fec_set_index / 32`. Roots are 20-byte entries (the double tree commits to the truncated root). Proof entries are 20 bytes, matching what `shred.rs` uses.
+
+**What the server needs and who is served.**
+- Answers only if the blockstore has a `DoubleMerkleMeta` for that `(slot, block_id)` (a complete block). Otherwise it stays silent (no error packet). Lookups are by `block_id`, so alternate versions of a slot are also found.
+- Unstaked and unknown senders are accepted after the handshake. Stake and a whitelist only decide who is dropped first when over 1024 requests per iteration. Outbound budget 12 MB/s (leaders pay 10x).
+- **Retention** is the validator's `--limit-ledger-size`. The source's legacy default is 200,000,000 shreds (`LEGACY_DEFAULT_MAX_LEDGER_SHREDS`). At 256 shreds per slot (our local blocks), that is roughly 780,000 slots, about 3.6 days at 0.4 s per slot. Real blocks are bigger or smaller, so the real window is a rough estimate. The local test validator keeps far less.
+
+**Reference client.** Agave's own `core/src/repair/block_id_repair_service.rs` is the working client for exactly these requests: `send_requests`, `process_block_id_repair_response`, `process_block_id_repair_ping_response`, `retry_timed_out_requests`. It is the template for ours.
+
+### Still unverified
+- The byte placement of the nonce in `BlockIdRepairResponse` packets (assumed trailing, as for shreds).
+- That devnet/mainnet validators accept requests from an unknown throwaway identity in practice. The source says yes after the handshake; real peers may add network-level filters.
+- Whether UDP from a laptop behind NAT can receive the replies (a VPS is safer).
 
 ## Other routes
 
@@ -98,4 +133,4 @@ This fits Huginn: the certificate gives the `block_id`; `ParentFecSetCount` give
 
 ## Proposed next step
 
-Build a repair client crate (`shred-repair`): get `serveRepair` addresses from `getClusterNodes`, complete the ping/pong handshake with a throwaway keypair, fetch `ParentFecSetCount`, `FecSetRoot` (all sets) and `WindowIndexForBlockId` (target data shreds), verify against the certified `block_id`, and feed the same `ShredSource` as the ledger path. Test it first against the local validator (its `serveRepair` is `127.0.0.1:8008`).
+Build a repair client crate (`shred-repair`), following Agave's `block_id_repair_service.rs`: get `serveRepair` addresses from `getClusterNodes`, complete the ping/pong handshake with a throwaway keypair, fetch `ParentFecSetCount`, `FecSetRoot` (all sets) and `WindowIndexForBlockId` (target data shreds), verify against the certified `block_id`, and feed the same `ShredSource` as the ledger path. Test it first against the local validator (its `serveRepair` is `127.0.0.1:8008`).
