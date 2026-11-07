@@ -49,7 +49,13 @@ pub fn block_input(f: &Value) -> BlockInput {
                 .then(|| aggregate(&cert["notar_aggregate"])),
         },
         parent_slot: f["parent_slot"].as_u64().expect("parent_slot"),
-        parent_block_id: hash(&f["parent_block_final_cert"]["block_id"]),
+        // Newer fixtures name the parent's block id directly; older ones carry it inside
+        // the parent's certificate.
+        parent_block_id: if f["parent_block_id"].is_null() {
+            hash(&f["parent_block_final_cert"]["block_id"])
+        } else {
+            hash(&f["parent_block_id"])
+        },
         data_shreds: f["data_shreds"]
             .as_array()
             .expect("data_shreds")

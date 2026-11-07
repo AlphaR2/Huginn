@@ -400,27 +400,66 @@ pub fn build_fixture(
         bail!("parent {parent_slot} is in a different epoch than {slot}");
     }
 
-    // With certs from shreds, the parent's is in this block's own footer.
+    // The parent's own certificate is optional: a footer carries the cert of the newest
+    // block that was final when it was written, which on a busy cluster is often not the
+    // parent, and finalizing a block finalizes its ancestors, so a parent may never get one.
+    // When it is there (a local chain, mostly) it is checked too.
     let raw_parent = match certs {
-        Certs::Shreds => footer_cert(&data)?
-            .filter(|c| c["slot"] == parent_slot)
-            .with_context(|| {
-                format!("slot {slot}'s footer has no cert for its parent {parent_slot}")
-            })?,
-        Certs::Plugin(_) => certs.for_slot(src, parent_slot, last)?,
+        Certs::Shreds => footer_cert(&data)?.filter(|c| c["slot"] == parent_slot),
+        Certs::Plugin(_) => certs.for_slot(src, parent_slot, last).ok(),
     };
     let raw_cert = certs.for_slot(src, slot, last)?;
     let cert: FooterCert = serde_json::from_value(raw_cert.clone())?;
-    let parent_cert: FooterCert = serde_json::from_value(raw_parent.clone())?;
     verify_footer(&cert, shred_version, &set).with_context(|| format!("cert for {slot}"))?;
-    verify_footer(&parent_cert, shred_version, &set)
-        .with_context(|| format!("cert for {parent_slot}"))?;
+    let parent_cert: Option<FooterCert> = match &raw_parent {
+        Some(raw) => {
+            let c: FooterCert = serde_json::from_value(raw.clone())?;
+            verify_footer(&c, shred_version, &set)
+                .with_context(|| format!("cert for {parent_slot}"))?;
+            Some(c)
+        }
+        None => None,
+    };
 
-    let computed = shred::block_id(&roots, parent_slot, &parent_cert.block_id)?;
+    // The parent's block id is written in the block itself (its header, and any
+    // update-parent marker) and bound into the block_id the certificate signs. So any
+    // candidate is fine as an input: only the right one rebuilds the certified block_id.
+    let mut candidates: Vec<(u64, [u8; 32])> = Vec::new();
+    if let Some(c) = &parent_cert {
+        candidates.push((parent_slot, c.block_id));
+    }
+    if let Ok(components) = block::deshred(&shreds) {
+        for c in &components {
+            match block::parse_component(c) {
+                Ok(Component::Marker(Marker::Header {
+                    parent_slot: ps,
+                    parent_block_id: pb,
+                }))
+                | Ok(Component::Marker(Marker::UpdateParent {
+                    parent_slot: ps,
+                    parent_block_id: pb,
+                })) => candidates.push((ps, pb)),
+                _ => {}
+            }
+        }
+    }
+    let (parent_slot_used, parent_block_id) = candidates
+        .iter()
+        .copied()
+        .find(|(ps, pb)| shred::block_id(&roots, *ps, pb).is_ok_and(|id| id == cert.block_id))
+        .or(candidates.first().copied())
+        .with_context(|| format!("slot {slot}: no parent block id in its header or footer"))?;
+    let parent_source = if parent_cert.is_some() {
+        "its certificate"
+    } else {
+        "the block's header"
+    };
+    let computed = shred::block_id(&roots, parent_slot_used, &parent_block_id)?;
     let report = vec![
         format!("slot {slot} (epoch {epoch}): {} data + {} coding shreds, {} FEC set(s), parent {parent_slot}", data.len(), code.len(), roots.len()),
         format!(
-            "  certs for {slot} and {parent_slot} verify (shred version {shred_version}, from {})",
+            "  cert for {slot}{} verifies (shred version {shred_version}, from {}); parent block id from {parent_source}",
+            if parent_cert.is_some() { format!(" and for {parent_slot}") } else { String::new() },
             match certs {
                 Certs::Shreds => "the shreds' footers",
                 Certs::Plugin(_) => "the plugin",
@@ -439,12 +478,13 @@ pub fn build_fixture(
     let fixture = json!({
         "cluster": "local",
         "slot": slot,
-        "parent_slot": parent_slot,
+        "parent_slot": parent_slot_used,
         "epoch": epoch,
         "shred_version": shred_version,
         "validator_set": set_json["validator_set"],
         "cert_source": certs.name(),
         "block_final_cert": raw_cert,
+        "parent_block_id": hex::encode(parent_block_id),
         "parent_block_final_cert": raw_parent,
         // Coding shreds aren't needed to rebuild the block_id (checked above, not stored).
         "data_shreds": data.iter().map(hex::encode).collect::<Vec<_>>(),

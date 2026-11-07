@@ -124,10 +124,22 @@ Read from a shallow clone of `v4.4.1` (`5bb3040`). `git diff v4.4.0 v4.4.1` show
 - **A wrong block id gets no answer** (the server stays silent), as the source says.
 - **Corrections to my reading of the source:** the block-id ping (`BlockIdRepairResponse::Ping`, variant 2) has **no trailing nonce**, unlike the other replies; shred replies and the parent/root replies do end in the 4-byte little-endian nonce.
 
+### Tested against public devnet (2026-11-07)
+
+Devnet runs Agave 4.4.0 and 147 of its nodes advertise a `serveRepair` address (`shred-repair peers --rpc https://api.devnet.solana.com`). With a fresh throwaway identity from a laptop on a home network (no VPS, no port forwarding):
+- **The first public validator tried served us.** All 192 data shreds of slot 519,635,459 and of its child, about 66 seconds for both, through the same handshake as locally.
+- **`ledger-dump` printed `MATCH`:** devnet shred version 7016, epoch 1202's 22-validator set (`fetch validator-set --cluster devnet`), a real **fast-path certificate with 17 of the 21 ranked validators in its bitmap**, and the block id rebuilt from 6 FEC sets equal to the certified one. This is the first real multi-validator certificate Huginn has verified on a block from a live network.
+- **By block id:** `shred-repair shape` against the same peer proved the 6 set roots and the parent against the block id, no shred downloaded.
+- Kept as a permanent test: `fixtures/devnet/shreds/` and `crates/ledger-dump/tests/devnet_block.rs`.
+
+**What the real network showed that my local chain hid:** a footer carries the certificate of the *newest final block when it was written*, not necessarily the parent. Slot ...459's footer carried the cert for ...457. Finalizing a block finalizes its ancestors, so a parent may never get a certificate of its own. `ledger-dump` therefore no longer needs the parent's cert: the parent block id is read from the block's own header (and bound into the certified `block_id`, so only the true one rebuilds it). The child's footer still gave the cert for the block itself, which is all the proof needs.
+
 ### Still unverified
-- Behaviour against devnet or mainnet peers (identity filtering, rate limits, how long slots are kept).
-- UDP replies from a laptop behind NAT.
-- Only data shreds are fetched (WindowIndex serves data shreds only); every data shred's proof already yields its set's root, so coding shreds are not needed for Huginn.
+- Whether every devnet or mainnet peer behaves the same (rate limits, identity filters). One public devnet peer, one run.
+- How far back peers keep slots (this run fetched slots about 40 slots old, about 16 seconds).
+- Whether the child's footer always carries the cert for the block. Here it did; under load it may arrive a few blocks later (the code would need to look at later blocks).
+- Mainnet.
+- Only data shreds are fetched (`WindowIndex` serves data shreds only); every data shred's proof already yields its set's root, so coding shreds are not needed.
 
 ## Other routes
 

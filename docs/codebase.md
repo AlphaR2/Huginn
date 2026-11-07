@@ -224,7 +224,7 @@ Two sources today:
 
 **`build_fixture(source, slot, sets, certs)`** is the same for every source. It:
 - takes the certificates from the child block's footer (`Certs::Shreds`, the default) or from footer-dump (`Certs::Plugin`);
-- checks the coding shreds against their FEC roots, the shred version, both certificates against the epoch's validator set, and the rebuilt block_id;
+- checks the coding shreds against their FEC roots, the shred version, the block's certificate (and the parent's, if its footer carries one) against the epoch's validator set, and the rebuilt block_id. The parent's block id comes from the parent's certificate when there is one, otherwise from the block's own header; either way it only counts if it rebuilds the certified block_id;
 - returns a fixture **only if every check passes**.
 
 The CLI (`src/main.rs`):
