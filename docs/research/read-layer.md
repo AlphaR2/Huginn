@@ -115,10 +115,19 @@ Read from a shallow clone of `v4.4.1` (`5bb3040`). `git diff v4.4.0 v4.4.1` show
 
 **Reference client.** Agave's own `core/src/repair/block_id_repair_service.rs` is the working client for exactly these requests: `send_requests`, `process_block_id_repair_response`, `process_block_id_repair_ping_response`, `retry_timed_out_requests`. It is the template for ours.
 
+### Tested against a real Agave 4.4.0 node (2026-11-07)
+
+`crates/shred-repair` implements the client. Against the local Alpenglow validator (`127.0.0.1:8008`) with a random throwaway identity:
+- **Handshake works.** The first request is answered with a ping; after our pong the node serves us.
+- **By slot:** `HighestWindowIndex` and `WindowIndex` fetched all 96 data shreds of slot 43419 and of its child 43420. `ledger-dump --shreds` on those files printed `MATCH` (computed `block_id` == certified `block_id`), with no ledger read.
+- **By block id:** `ParentAndFecSetCount` and `FecSetRoot` returned 3 sets and a parent, every proof checked out against the `block_id`; `WindowIndexForBlockId` then returned the 96 data shreds, which matched the proven roots and again gave `MATCH`.
+- **A wrong block id gets no answer** (the server stays silent), as the source says.
+- **Corrections to my reading of the source:** the block-id ping (`BlockIdRepairResponse::Ping`, variant 2) has **no trailing nonce**, unlike the other replies; shred replies and the parent/root replies do end in the 4-byte little-endian nonce.
+
 ### Still unverified
-- The byte placement of the nonce in `BlockIdRepairResponse` packets (assumed trailing, as for shreds).
-- That devnet/mainnet validators accept requests from an unknown throwaway identity in practice. The source says yes after the handshake; real peers may add network-level filters.
-- Whether UDP from a laptop behind NAT can receive the replies (a VPS is safer).
+- Behaviour against devnet or mainnet peers (identity filtering, rate limits, how long slots are kept).
+- UDP replies from a laptop behind NAT.
+- Only data shreds are fetched (WindowIndex serves data shreds only); every data shred's proof already yields its set's root, so coding shreds are not needed for Huginn.
 
 ## Other routes
 
@@ -131,6 +140,6 @@ Read from a shallow clone of `v4.4.1` (`5bb3040`). `git diff v4.4.0 v4.4.1` show
 | Patched validator that exports shreds | A server and maintenance | Possible; not needed if the blockstore is readable |
 | Relayer service | Someone runs the node | Business model, not a source |
 
-## Proposed next step
+## Status
 
-Build a repair client crate (`shred-repair`), following Agave's `block_id_repair_service.rs`: get `serveRepair` addresses from `getClusterNodes`, complete the ping/pong handshake with a throwaway keypair, fetch `ParentFecSetCount`, `FecSetRoot` (all sets) and `WindowIndexForBlockId` (target data shreds), verify against the certified `block_id`, and feed the same `ShredSource` as the ledger path. Test it first against the local validator (its `serveRepair` is `127.0.0.1:8008`).
+Built as `crates/shred-repair` (see above). It does the following: get `serveRepair` addresses from `getClusterNodes`, complete the ping/pong handshake with a throwaway keypair, fetch `ParentFecSetCount`, `FecSetRoot` (all sets) and `WindowIndexForBlockId` (target data shreds), verify against the certified `block_id`, and feed the same `ShredSource` as the ledger path. Test it first against the local validator (its `serveRepair` is `127.0.0.1:8008`).

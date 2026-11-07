@@ -1,0 +1,20 @@
+[package]
+name = "shred-repair"
+description = "Fetch a block's shreds from Solana validators with Agave's own repair protocol. No node, no paid feed, works for past blocks."
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+publish = false
+
+[dependencies]
+alpenglow-core = { path = "../alpenglow-core" }
+anyhow.workspace = true
+clap = { version = "4", features = ["derive"] }
+hex.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+bs58 = "0.5"
+ureq = { version = "2", features = ["json"] }
+# Only the signing key: the same ed25519 Agave uses for node identities.
+solana-keypair = "=4.0.0"
+solana-signer = "=4.0.0"

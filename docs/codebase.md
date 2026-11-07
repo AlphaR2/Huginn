@@ -33,7 +33,7 @@ Each arrow is code in `crates/alpenglow-core`. The SP1 program in `zk/program` r
 | Kind | Where | Runs where |
 |---|---|---|
 | **The verifier**: what the proof proves | `crates/alpenglow-core` | natively in tests **and** inside SP1 |
-| **Tools and references**: getting data, cross-checking | `crates/alpenglow-lc`, `crates/fetch`, `crates/ledger-dump`, `plugins/footer-dump`, `zk/prover` | your machine only |
+| **Tools and references**: getting data, cross-checking | `crates/alpenglow-lc`, `crates/fetch`, `crates/ledger-dump`, `crates/shred-repair`, `plugins/footer-dump`, `zk/prover` | your machine only |
 
 A rule that runs through the whole repo: **`alpenglow-core` never trusts itself.** Everything it does is cross-checked against Agave's own code (`alpenglow-lc`) or against real chain data (`fixtures/`).
 
@@ -47,7 +47,7 @@ A rule that runs through the whole repo: **`alpenglow-core` never trusts itself.
 4. `crates/alpenglow-core/src/proof.rs`: how the pieces combine into the three statements we prove.
 5. `crates/alpenglow-core/tests/proof.rs`: every attack we refuse, one test each.
 6. `zk/program/src/main.rs`: the 20 lines that run all of the above in SP1.
-7. Then the tools, in data-flow order: `crates/fetch` → `crates/ledger-dump` → `zk/prover` (and `plugins/footer-dump`, now optional).
+7. Then the tools, in data-flow order: `crates/fetch` → `crates/shred-repair` → `crates/ledger-dump` → `zk/prover` (and `plugins/footer-dump`, now optional).
 8. `crates/alpenglow-lc`, the Agave-based reference, when you want to see *why* we believe `alpenglow-core` is right.
 
 ---
@@ -220,7 +220,7 @@ Two sources today:
 - **`Ledger`**: an Agave ledger's RocksDB, read-only, so it's safe while the validator runs. That's your local validator, or any node's ledger on devnet or mainnet. It uses the exact RocksDB version Agave 4.4.0 uses.
 - **`ShredFiles`**: a directory of `shreds_<slot>.json` files, written by `export`. Use it offline and in tests.
 
-A Jito ShredStream receiver or a repair-protocol client would be a third `impl ShredSource`. Nothing else would change.
+`crates/shred-repair` (next section) fills a directory of shred files from live validators, so it feeds `ShredFiles` and nothing else changes. A live shred feed would be another `impl ShredSource`.
 
 **`build_fixture(source, slot, sets, certs)`** is the same for every source. It:
 - takes the certificates from the child block's footer (`Certs::Shreds`, the default) or from footer-dump (`Certs::Plugin`);
@@ -245,6 +245,23 @@ cargo run --release -p ledger-dump -- --certs plugin             # certificates 
 
 Two separate Cargo workspaces, because the program compiles for RISC-V and the runner pulls in the large `sp1-sdk`.
 
+
+### `crates/shred-repair`: shreds from validators, no node and no paid feed
+Asks a validator for a block's shreds with Agave's own **repair protocol**, the way validators fill gaps in their ledgers. A validator serves any node that asks, after a ping/pong handshake, for any slot still in its ledger. No subscription and no replay problem: it works for blocks that already happened.
+
+- `src/wire.rs`: the bytes on the wire (request layout, what is signed, ping and pong, reply parsing). Three unit tests.
+- `src/client.rs`: one UDP socket, a random throwaway identity, one peer. `ask` sends a signed request, answers a ping with a pong, retries.
+- `src/lib.rs`: `fetch_shape` (parent info and every FEC set root, each proven against the `block_id`, no shreds downloaded), `fetch_block` (all data shreds by block id, checked against those roots), `fetch_slot` (by slot when the id isn't known yet), `write_shred_file`.
+- `src/main.rs`: the CLI.
+
+```bash
+cargo run --release -p shred-repair -- peers                      # who serves repair (getClusterNodes)
+cargo run --release -p shred-repair -- shape --slot N --block-id 0x...   # prove a block's shape, no download
+cargo run --release -p shred-repair -- fetch --slot N [--block-id 0x...] --out DIR
+ledger-dump --shreds DIR --slot N                                  # certificate + inclusion checks, MATCH
+```
+
+Why this is safe: the peer is untrusted. Every set root and the parent info come with a Merkle proof to the certified `block_id`, and the shreds must reproduce those roots, so a wrong or lying peer simply fails. A wrong block id gets no answer at all. Tested against a real Agave 4.4.0 validator (`tests/live.rs`, ignored by default, needs a running validator). See `docs/research/read-layer.md` for the protocol details and what is still unverified (devnet and mainnet peers).
 ### `zk/program`: what gets proven
 `src/main.rs` (~25 lines):
 1. read a `TxInput`;

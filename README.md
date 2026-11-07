@@ -37,6 +37,7 @@ crates/alpenglow-core/   the verifier: certificates, block_id, shreds, transacti
 crates/alpenglow-lc/     cross-checks against Agave's own crates; validator set ranking
 crates/fetch/            CLI: genesis certs, shred version, validator sets from RPC
 crates/ledger-dump/      block fixtures from a ledger or shred files, every check done first
+crates/shred-repair/     fetch a block's shreds from validators (Agave's repair protocol), no node needed
 plugins/footer-dump/     optional Geyser plugin that captures block footers
 zk/program/              the SP1 program
 zk/prover/               huginn-prover crate and `huginn` CLI
