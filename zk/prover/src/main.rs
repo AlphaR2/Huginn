@@ -49,7 +49,10 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let real = tx_input_from_block_file(&cli.block, &cli.signature)?;
 
-    let mut runs = vec![("real, 1 validator, fast".to_string(), real.clone())];
+    let path = if real.finality.notar_aggregate.is_none() { "fast" } else { "slow" };
+    let n = real.finality.validators.len();
+    let label = format!("real, {n} validator{}, {path}", if n == 1 { "" } else { "s" });
+    let mut runs = vec![(label, real.clone())];
     for &n in &cli.synthetic {
         runs.push((format!("{n} validators, fast"), TxInput { finality: fixture::synthetic(&real.finality, n), ..real.clone() }));
     }
