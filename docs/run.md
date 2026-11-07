@@ -81,7 +81,7 @@ cd app && cargo build --release && cd ..
 
 Nothing to do by hand: when the app deploys, it reads the chain's shred version and current validator set from the validator's own RPC (into `huginn-evm/proofs/local/`), so a fresh `.local-ledger` just works. The repo's tracked `fixtures/local` files belong to an older chain and are used only by the tests.
 
-To run the same flow against public devnet and Base Sepolia on a VPS, with real Groth16 proofs: `huginn-evm/docs/devnet-runbook.md`.
+To run the same flow against public devnet and Base Sepolia with real Groth16 proofs, use `huginn-evm --cluster devnet --mode groth16` on a 32 GB machine (see section 2 below and `huginn-evm/docs/deploy.md`).
 
 ---
 
