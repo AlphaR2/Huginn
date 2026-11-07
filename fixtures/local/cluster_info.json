@@ -1,9 +1,9 @@
 {
   "cluster": "local",
   "epoch": 0,
-  "shred_version": 28090,
+  "shred_version": 35419,
   "shred_version_tally": {
-    "28090": 1
+    "35419": 1
   },
-  "slot": 355
+  "slot": 253
 }

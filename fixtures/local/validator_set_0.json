@@ -1,8 +1,8 @@
 {
   "cluster": "local",
-  "commitment": "b1f25236519c10b064498b6507ed0b87b88ad4df728a0a348e9434769d7d3c11",
+  "commitment": "6b5bffdaafcb0727c4cbb42b847b2e32b06d01597890a7fdffbf367e7e16f34d",
   "epoch": 0,
-  "fetched_at_slot": 47595,
+  "fetched_at_slot": 356,
   "source": "getVoteAccounts.activatedStake + vote account data (current epoch only)",
   "stats": {
     "ranked": 1,
@@ -13,10 +13,10 @@
   "validator_set": {
     "entries": [
       {
-        "bls_pubkey": "81c084ed3e55bea3d4a242e8e68aa94de44febb7f0213c74c635474d462c7962621770faf7f714e504c976cf348ff620",
-        "node_pubkey": "362b3a30e3bea31577f6f98a2de01b5085c0b20d453884cd13640d0a4b452f48",
+        "bls_pubkey": "b0eadd46f2de3df6b837e09d9c79bc1ef85e1d39b26e22f297b5038524b072e495ce1658838cdf35113fea5a9c079478",
+        "node_pubkey": "d6e843e05253ac98aae2bfba150d9930c0804213b68f8692692b0ca2586f43a2",
         "stake": 999999997717120,
-        "vote_pubkey": "c682b46dd55aa30f3c58c634909d98030a749d001c63fb2f9f7a9db22279e0f5"
+        "vote_pubkey": "cd1ada9792ab2d832af1360d563ac71f839518b1009280c587c349b246a5f48b"
       }
     ],
     "epoch": 0,
