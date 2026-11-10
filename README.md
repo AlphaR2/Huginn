@@ -2,6 +2,8 @@
 
 **Verify Solana transactions on any chain, using Solana's own validators.**
 
+**Think of it like a communications layer or a light client**
+
 A contract on another chain can check, by itself, that a Solana transaction landed in a finalized block, at a given slot, signed by given keys, with given instructions. No bridge committee: the check is Solana's own validator signatures, proven in a zero-knowledge program.
 
 - **Finality:** Alpenglow certificates (aggregated BLS signatures) checked against the epoch's validator set.
