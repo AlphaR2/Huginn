@@ -12,7 +12,8 @@ use {
     anyhow::{bail, Context, Result},
     clap::Parser,
     ledger_dump::{
-        build_fixture, export, newest_certified, Certs, Ledger, Sets, ShredFiles, ShredSource,
+        build_fixture, export, newest_certified, reconcile_set, Certs, Ledger, Sets, ShredFiles,
+        ShredSource,
     },
     std::{fs, path::PathBuf},
 };
@@ -51,6 +52,11 @@ struct Cli {
     /// Output directory.
     #[arg(long, default_value = "fixtures/local")]
     out: PathBuf,
+    /// Instead of a fixture, make the validator set in `--sets` agree with this slot's
+    /// certificate (drops validators that registered a BLS key after the epoch began), and
+    /// rewrite the set file if it had to change.
+    #[arg(long)]
+    fix_set: bool,
 }
 
 fn main() -> Result<()> {
@@ -86,6 +92,12 @@ fn main() -> Result<()> {
         dir: cli.sets.clone(),
         slots_per_epoch: cli.slots_per_epoch,
     };
+    if cli.fix_set {
+        for line in reconcile_set(src.as_ref(), slot, &sets, &certs)? {
+            println!("{line}");
+        }
+        return Ok(());
+    }
     let built = build_fixture(src.as_ref(), slot, &sets, &certs)?;
     for line in &built.report {
         println!("{line}");
