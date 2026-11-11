@@ -57,8 +57,8 @@ struct Cli {
     /// rewrite the set file if it had to change.
     #[arg(long)]
     fix_set: bool,
-    /// With `--fix-set`: the slots whose certificates must all verify (comma separated).
-    /// Default: just `--slot`.
+    /// With `--fix-set`: the blocks whose footer certificates must all verify (comma
+    /// separated). Default: every block the source holds.
     #[arg(long, value_delimiter = ',')]
     fix_slots: Vec<u64>,
 }
@@ -83,6 +83,22 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    let sets = Sets {
+        dir: cli.sets.clone(),
+        slots_per_epoch: cli.slots_per_epoch,
+    };
+    if cli.fix_set {
+        let slots: Vec<u64> = if cli.fix_slots.is_empty() {
+            let (a, b) = src.range()?;
+            (a..=b).collect()
+        } else {
+            cli.fix_slots.clone()
+        };
+        for line in reconcile_set(src.as_ref(), &slots, &sets)? {
+            println!("{line}");
+        }
+        return Ok(());
+    }
     let certs = match cli.certs.as_str() {
         "shreds" => Certs::Shreds,
         "plugin" => Certs::plugin(&cli.footers)?,
@@ -92,21 +108,6 @@ fn main() -> Result<()> {
         Some(s) => s,
         None => newest_certified(src.as_ref(), &certs)?,
     };
-    let sets = Sets {
-        dir: cli.sets.clone(),
-        slots_per_epoch: cli.slots_per_epoch,
-    };
-    if cli.fix_set {
-        let slots = if cli.fix_slots.is_empty() {
-            vec![slot]
-        } else {
-            cli.fix_slots.clone()
-        };
-        for line in reconcile_set(src.as_ref(), &slots, &sets, &certs)? {
-            println!("{line}");
-        }
-        return Ok(());
-    }
     let built = build_fixture(src.as_ref(), slot, &sets, &certs)?;
     for line in &built.report {
         println!("{line}");

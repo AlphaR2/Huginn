@@ -41,6 +41,17 @@ enum Cmd {
         #[arg(long, default_value = "fixtures/repaired")]
         out: PathBuf,
     },
+    /// Download a run of consecutive blocks and write their shred files, nothing more. Each
+    /// block's footer carries a certificate for a recent block, so a run gives several
+    /// certificates for the price of one walk (`ledger-dump --fix-set` reads them).
+    Footers {
+        #[arg(long)]
+        from: u64,
+        #[arg(long, default_value_t = 6)]
+        count: u64,
+        #[arg(long, default_value = "fixtures/repaired")]
+        out: PathBuf,
+    },
     /// Ask only for the block's shape (set count, parent, every set root) and verify it
     /// against the block id. Downloads no shred.
     Shape {
@@ -163,6 +174,30 @@ fn main() -> Result<()> {
             for p in peers(&cli.rpc)? {
                 println!("{}  {}", p.addr, bs58::encode(p.id).into_string());
             }
+        }
+        Cmd::Footers { from, count, out } => {
+            let served_by = with_peer(&cli, |c, peer| {
+                let slots: Vec<u64> = produced(&cli.rpc, *from, from + count * 3)?
+                    .into_iter()
+                    .take(*count as usize)
+                    .collect();
+                ensure!(!slots.is_empty(), "no blocks from {from} on {}", cli.rpc);
+                for s in slots {
+                    let shreds = fetch_slot_patiently(c, s)?;
+                    let cert = match footer_cert_slot(&shreds) {
+                        Some(x) => format!("its footer certifies slot {x}"),
+                        None => "its footer carries no certificate".to_string(),
+                    };
+                    println!("slot {s}: {} data shreds ({cert})", shreds.len());
+                    write_shred_file(out, s, &shreds)?;
+                }
+                Ok(format!(
+                    "{} {}",
+                    peer.addr,
+                    bs58::encode(peer.id).into_string()
+                ))
+            })?;
+            println!("served by {served_by}");
         }
         Cmd::Shape { slot, block_id } => {
             let id = hash(block_id)?;
