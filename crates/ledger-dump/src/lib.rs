@@ -531,20 +531,23 @@ fn omissions(n: usize, k: usize) -> Vec<Vec<usize>> {
     out
 }
 
-/// Makes the saved validator set agree with a real certificate.
+/// Makes the saved validator set agree with real certificates.
 ///
-/// `fetch validator-set` reads the vote accounts as they are now, but the certificate was
+/// `fetch validator-set` reads the vote accounts as they are now, but the certificates were
 /// signed by the set the epoch started with. A validator that registered a BLS key after the
 /// epoch began is in our list and not in the signers' list, which shifts every rank below it
-/// and makes the signature fail. The certificate's signer bitmap says how many validators the
-/// signers had, so we leave out exactly that many of ours, and keep the one choice the
-/// certificate verifies against. Nothing is guessed: a wrong set cannot verify, and if no
-/// choice or more than one verifies we stop and say so.
+/// and makes the signature fail. The signer bitmap says how many validators the signers had,
+/// so we leave out exactly that many of ours.
+///
+/// One certificate can leave several choices open (a validator that did not sign that block
+/// is not tested by it), so every given slot's certificate must verify, and we keep the one
+/// choice they all accept. Nothing is guessed: a wrong set cannot verify, and if no choice or
+/// more than one survives we stop and say so (give it more slots).
 ///
 /// Returns what it did, one line each. The set file is rewritten only when it was changed.
 pub fn reconcile_set(
     src: &dyn ShredSource,
-    slot: u64,
+    slots: &[u64],
     sets: &Sets,
     certs: &Certs,
 ) -> Result<Vec<String>> {
@@ -552,72 +555,103 @@ pub fn reconcile_set(
     let shred_version = read_json(&sets.dir.join("cluster_info.json"))?["shred_version"]
         .as_u64()
         .context("shred_version")? as u16;
-    let epoch = slot / sets.slots_per_epoch;
+    let first = *slots.first().context("no slots to check against")?;
+    let epoch = first / sets.slots_per_epoch;
     let path = sets.dir.join(format!("validator_set_{epoch}.json"));
     let mut file = read_json(&path)?;
     let set: ValidatorSet = serde_json::from_value(file["validator_set"].clone())?;
-    let cert: FooterCert = serde_json::from_value(certs.for_slot(src, slot, last)?)?;
+    let n = set.entries.len();
 
-    if verify_footer(&cert, shred_version, &set).is_ok() {
+    let mut certified: Vec<(u64, FooterCert)> = Vec::new();
+    for &slot in slots {
+        if slot / sets.slots_per_epoch != epoch {
+            continue;
+        }
+        if let Ok(raw) = certs.for_slot(src, slot, last) {
+            certified.push((slot, serde_json::from_value(raw)?));
+        }
+    }
+    if certified.is_empty() {
+        bail!("none of the {} slots has a certificate", slots.len());
+    }
+
+    let without = |drop: &[usize]| {
+        let entries: Vec<_> = set
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !drop.contains(i))
+            .map(|(_, e)| e.clone())
+            .collect();
+        let total_stake = entries.iter().fold(0u64, |t, e| t.saturating_add(e.stake));
+        ValidatorSet {
+            epoch: set.epoch,
+            total_stake,
+            entries,
+        }
+    };
+
+    if certified
+        .iter()
+        .all(|(_, c)| verify_footer(c, shred_version, &set).is_ok())
+    {
         return Ok(vec![format!(
-            "set for epoch {epoch} ({} validators) matches the certificate for slot {slot}",
-            set.entries.len()
+            "set for epoch {epoch} ({n} validators) matches the certificates of {} blocks",
+            certified.len()
         )]);
     }
 
-    // The signers' set size, when the bitmap says it: version 0, then a u16 bit count.
-    let bm = &cert.final_aggregate.bitmap;
-    let n = set.entries.len();
+    // How many validators the signers had, when the bitmap says (version 0, then a u16 count).
+    let bm = &certified[0].1.final_aggregate.bitmap;
     let sizes: Vec<usize> = match (bm.first(), bm.get(1..3)) {
         (Some(0), Some(c)) => {
             let bits = u16::from_le_bytes([c[0], c[1]]) as usize;
             if bits >= n {
-                bail!("the certificate was signed by {bits} validators; our set has {n}, so nothing to leave out");
+                bail!("the certificates were signed by {bits} validators; our set has {n}, so nothing to leave out");
             }
             vec![bits]
         }
         _ => (n.saturating_sub(MAX_DROPPED)..n).rev().collect(),
     };
 
-    let mut found: Option<(Vec<usize>, ValidatorSet)> = None;
+    // Choices the first certificate accepts, then only those the others accept too.
+    let mut survivors: Vec<Vec<usize>> = Vec::new();
     for size in sizes {
         let k = n - size;
         if k > MAX_DROPPED {
-            bail!("the certificate's signers are {k} fewer than our set; will not guess past {MAX_DROPPED}");
+            bail!("the signers are {k} fewer than our set; will not guess past {MAX_DROPPED}");
         }
-        for drop in omissions(n, k) {
-            let entries: Vec<_> = set
-                .entries
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| !drop.contains(i))
-                .map(|(_, e)| e.clone())
-                .collect();
-            let total_stake = entries.iter().fold(0u64, |t, e| t.saturating_add(e.stake));
-            let cand = ValidatorSet {
-                epoch: set.epoch,
-                total_stake,
-                entries,
-            };
-            if verify_footer(&cert, shred_version, &cand).is_ok() {
-                if found.is_some() {
-                    bail!("more than one way to leave out {k} validators matches the certificate; refusing to pick");
-                }
-                found = Some((drop, cand));
-            }
-        }
-        if found.is_some() {
+        survivors = omissions(n, k)
+            .into_iter()
+            .filter(|d| verify_footer(&certified[0].1, shred_version, &without(d)).is_ok())
+            .collect();
+        if !survivors.is_empty() {
             break;
         }
     }
-    let (drop, fixed) = found.context(
-        "no way of leaving out a few validators makes the certificate verify: the set is wrong in some other way",
-    )?;
+    for (_, c) in &certified[1..] {
+        survivors.retain(|d| verify_footer(c, shred_version, &without(d)).is_ok());
+    }
+    let blocks = certified.len();
+    if survivors.is_empty() {
+        bail!("no way of leaving out a few validators makes all {blocks} certificates verify: the set is wrong in some other way");
+    }
+    // Several choices left means the validators they differ on never signed in these blocks,
+    // so no certificate here can tell them apart and every choice verifies exactly the same
+    // blocks. Take the first and say so; a later block where one of them signs would show it.
+    let equal = survivors.len();
+    let drop = survivors.remove(0);
+    let fixed = without(&drop);
 
     let mut report = vec![format!(
-        "set for epoch {epoch} had {n} validators; the certificate for slot {slot} was signed by {}. Left out ranks {drop:?}, which registered a BLS key after the epoch began; the rest verifies",
+        "set for epoch {epoch} had {n} validators; {blocks} certificates were signed by {}. Left out ranks {drop:?}, which the epoch's snapshot did not have (new stake, low balance or no BLS key then); the rest verifies",
         fixed.entries.len()
     )];
+    if equal > 1 {
+        report.push(format!(
+            "  note: {equal} choices verify these {blocks} blocks equally (they differ on validators that did not sign in them); took the first. If a block they did sign in fails to verify, rerun"
+        ));
+    }
     for &i in &drop {
         report.push(format!(
             "  left out rank {i}: vote account {} stake {}",
@@ -629,9 +663,10 @@ pub fn reconcile_set(
     file["commitment"] = json!(hex::encode(fixed.commitment()));
     file["stats"]["ranked"] = json!(fixed.entries.len());
     file["reconciled"] = json!({
-        "against_slot": slot,
+        "checked_slots": certified.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
         "left_out_ranks": drop,
-        "why": "registered a BLS key after the epoch began; not in the set the certificate was signed by",
+        "equally_valid_choices": equal,
+        "why": "not in the epoch's stake snapshot (taken at the start of the previous epoch): no stake yet, too little balance, or no BLS key then",
     });
     fs::write(&path, serde_json::to_string_pretty(&file)? + "\n")?;
     report.push(format!(

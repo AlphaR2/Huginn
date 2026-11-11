@@ -57,6 +57,10 @@ struct Cli {
     /// rewrite the set file if it had to change.
     #[arg(long)]
     fix_set: bool,
+    /// With `--fix-set`: the slots whose certificates must all verify (comma separated).
+    /// Default: just `--slot`.
+    #[arg(long, value_delimiter = ',')]
+    fix_slots: Vec<u64>,
 }
 
 fn main() -> Result<()> {
@@ -93,7 +97,12 @@ fn main() -> Result<()> {
         slots_per_epoch: cli.slots_per_epoch,
     };
     if cli.fix_set {
-        for line in reconcile_set(src.as_ref(), slot, &sets, &certs)? {
+        let slots = if cli.fix_slots.is_empty() {
+            vec![slot]
+        } else {
+            cli.fix_slots.clone()
+        };
+        for line in reconcile_set(src.as_ref(), &slots, &sets, &certs)? {
             println!("{line}");
         }
         return Ok(());
