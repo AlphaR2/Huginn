@@ -18,9 +18,12 @@ serde_json = { workspace = true, optional = true }
 hex = { workspace = true, optional = true }
 
 [features]
+# On by default so tests, examples and host tools have it, and so this crate never has to list
+# itself as a dev-dependency (that self-reference confused rust-analyzer: "cyclic deps").
+# The SP1 program turns it off (`default-features = false` in zk/program/Cargo.toml).
+default = ["fixture"]
 fixture = ["dep:serde_json", "dep:hex"]
 
 [dev-dependencies]
-alpenglow-core = { path = ".", features = ["fixture"] }
 serde_json.workspace = true
 hex.workspace = true

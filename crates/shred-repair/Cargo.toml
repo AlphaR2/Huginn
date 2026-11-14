@@ -9,7 +9,7 @@ publish = false
 [dependencies]
 alpenglow-core = { path = "../alpenglow-core" }
 anyhow.workspace = true
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 hex.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
@@ -18,3 +18,4 @@ ureq = { version = "2", features = ["json"] }
 # Only the signing key: the same ed25519 Agave uses for node identities.
 solana-keypair = "=4.0.0"
 solana-signer = "=4.0.0"
+redact = { path = "../redact" }

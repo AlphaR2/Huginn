@@ -16,8 +16,9 @@ use {
 struct Cli {
     #[command(subcommand)]
     cmd: Cmd,
-    /// Override the RPC URL (defaults to the public endpoint for the cluster).
-    #[arg(long, global = true)]
+    /// RPC URL. Prefer the `SOLANA_RPC` environment variable: URLs can carry API keys, and a
+    /// command-line argument is visible to every user via `ps`. Defaults to the public endpoint.
+    #[arg(long, env = "SOLANA_RPC", hide_env_values = true, global = true)]
     rpc: Option<String>,
     /// Fixtures root.
     #[arg(long, global = true, default_value = "fixtures")]
@@ -73,9 +74,11 @@ struct Rpc(String);
 impl Rpc {
     fn call(&self, method: &str, params: Value) -> Result<Value> {
         let body = json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params});
+        // ureq's error text contains the full URL (and so any API key). Build our own error
+        // from the host only.
         let resp: Value = ureq::post(&self.0)
             .send_json(body)
-            .with_context(|| format!("{method} request failed"))?
+            .map_err(|e| anyhow::anyhow!("{method} request to {} failed: {}", redact::Host(&self.0), redact::redact_text(&e.to_string())))?
             .into_json()?;
         if let Some(err) = resp.get("error") {
             bail!("{method} returned error: {err}");
@@ -84,7 +87,15 @@ impl Rpc {
     }
 }
 
-fn main() -> Result<()> {
+fn main() {
+    if let Err(e) = run() {
+        // Every error is scrubbed: no RPC URL or key may reach the terminal or a log.
+        eprintln!("error: {}", redact::redact_text(&format!("{e:#}")));
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::GenesisCert { cluster } => {
@@ -121,6 +132,40 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// The epoch's members (`epochVoteAccount == true`) with their LIVE stake, from a
+/// `getVoteAccounts` result fetched with `keepUnstakedDelinquents: true`.
+///
+/// Fails closed if any member's live stake is 0. Such a validator (typically offline) is still
+/// a member: its frozen epoch stake is not 0, but public RPC does not tell us what it is. Using
+/// 0 would drop it from the ranked list and shift every rank below it, so the set would be
+/// wrong. Only the frozen stake (the recorder, quest Q4) can fix that.
+fn members(va: &Value) -> Result<Vec<(String, u64)>> {
+    let mut stakes = Vec::new();
+    let mut unknown = Vec::new();
+    for list in ["current", "delinquent"] {
+        for v in va[list].as_array().context(list)? {
+            if v["epochVoteAccount"].as_bool() != Some(true) {
+                continue;
+            }
+            let pk = v["votePubkey"].as_str().context("votePubkey")?.to_string();
+            let stake = v["activatedStake"].as_u64().context("activatedStake")?;
+            if stake == 0 {
+                unknown.push(pk.clone());
+            }
+            stakes.push((pk, stake));
+        }
+    }
+    if !unknown.is_empty() {
+        bail!(
+            "{} member(s) of this epoch show 0 live stake ({}): they are in the epoch's frozen set, \
+             but RPC does not give their frozen stake, so this set would be wrong. Not writing it.",
+            unknown.len(),
+            unknown.join(", ")
+        );
+    }
+    Ok(stakes)
+}
+
 fn validator_set(rpc: &Rpc, out: &std::path::Path, cluster: Cluster) -> Result<()> {
     // Read the slot first and pin every later call to it with minContextSlot, so a
     // set is never stitched together across an epoch boundary without us noticing.
@@ -128,18 +173,15 @@ fn validator_set(rpc: &Rpc, out: &std::path::Path, cluster: Cluster) -> Result<(
     let epoch = info["epoch"].as_u64().context("epoch")?;
     let slot = info["absoluteSlot"].as_u64().context("slot")?;
 
-    // `activatedStake` is the stake the bank uses for the current epoch.
+    // `activatedStake` here is LIVE stake (it moves during the epoch). It is NOT the frozen
+    // epoch stake that certificates are weighted by (Agave's VAT-filtered `epoch_stakes`).
+    // `epochVoteAccount == true` marks exactly the validators in that frozen set, so we keep
+    // only those; their stakes are still unverified until `ledger-dump check-set` passes.
     let va = rpc.call(
         "getVoteAccounts",
         json!([{"commitment": "finalized", "minContextSlot": slot, "keepUnstakedDelinquents": true}]),
     )?;
-    let mut stakes = Vec::new();
-    for list in ["current", "delinquent"] {
-        for v in va[list].as_array().context(list)? {
-            let pk = v["votePubkey"].as_str().context("votePubkey")?.to_string();
-            stakes.push((pk, v["activatedStake"].as_u64().context("activatedStake")?));
-        }
-    }
+    let stakes = members(&va)?;
 
     let mut candidates = Vec::with_capacity(stakes.len());
     let (mut v4, mut with_key) = (0usize, 0usize);
@@ -180,7 +222,8 @@ fn validator_set(rpc: &Rpc, out: &std::path::Path, cluster: Cluster) -> Result<(
         "cluster": cluster.name(),
         "epoch": epoch,
         "fetched_at_slot": slot,
-        "source": "getVoteAccounts.activatedStake + vote account data (current epoch only)",
+        "source": "getVoteAccounts (epochVoteAccount == true only) + vote account data",
+        "stake_label": "live (unverified)",
         "stats": {
             "vote_accounts": total,
             "v4_accounts": v4,
@@ -240,4 +283,32 @@ fn write(root: &std::path::Path, cluster: Cluster, file: &str, v: &Value) -> Res
     let path = dir.join(file);
     fs::write(&path, serde_json::to_string_pretty(v)? + "\n")?;
     Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keeps_only_epoch_members_including_delinquent_ones() {
+        let va = json!({
+            "current": [
+                {"votePubkey": "A", "activatedStake": 5, "epochVoteAccount": true},
+                {"votePubkey": "B", "activatedStake": 9, "epochVoteAccount": false}
+            ],
+            "delinquent": [{"votePubkey": "C", "activatedStake": 3, "epochVoteAccount": true}]
+        });
+        assert_eq!(members(&va).unwrap(), vec![("A".into(), 5), ("C".into(), 3)]);
+    }
+
+    #[test]
+    fn a_member_with_zero_live_stake_is_refused_not_dropped() {
+        // Mainnet epoch 1084 had exactly this: an offline member with live stake 0.
+        let va = json!({
+            "current": [{"votePubkey": "A", "activatedStake": 5, "epochVoteAccount": true}],
+            "delinquent": [{"votePubkey": "57GUg9", "activatedStake": 0, "epochVoteAccount": true}]
+        });
+        let e = members(&va).unwrap_err().to_string();
+        assert!(e.contains("57GUg9") && e.contains("Not writing"), "{e}");
+    }
 }

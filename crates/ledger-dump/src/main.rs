@@ -10,9 +10,9 @@
 
 use {
     anyhow::{bail, Context, Result},
-    clap::Parser,
+    clap::{Parser, Subcommand},
     ledger_dump::{
-        build_fixture, export, newest_certified, reconcile_set, Certs, Ledger, Sets, ShredFiles,
+        build_fixture, check_set, export, newest_certified, Certs, Ledger, Sets, ShredFiles,
         ShredSource,
     },
     std::{fs, path::PathBuf},
@@ -22,48 +22,66 @@ use {
 #[command(about = "Write a checked block fixture (set, certs, shreds) for a recent slot")]
 struct Cli {
     /// Ledger directory (the one passed to the validator with --ledger).
-    #[arg(long, default_value = ".local-ledger")]
+    #[arg(long, global = true, default_value = ".local-ledger")]
     ledger: PathBuf,
     /// Read shreds from this directory of `shreds_<slot>.json` files instead of a ledger.
-    #[arg(long)]
+    #[arg(long, global = true)]
     shreds: Option<PathBuf>,
     /// Slot to dump. Defaults to the most recent slot with a certificate.
-    #[arg(long)]
+    #[arg(long, global = true)]
     slot: Option<u64>,
     /// Only print the slot range the source holds.
-    #[arg(long)]
+    #[arg(long, global = true)]
     range: bool,
     /// Instead of a fixture, write `shreds_<slot>.json` for slots FROM..=TO (e.g. 100..102).
-    #[arg(long)]
+    #[arg(long, global = true)]
     export_shreds: Option<String>,
     /// Where certificates come from: `shreds` (the next block's footer) or `plugin`
     /// (footer-dump's output, `--footers`).
-    #[arg(long, default_value = "shreds")]
+    #[arg(long, global = true, default_value = "shreds")]
     certs: String,
     /// footer-dump plugin output, for `--certs plugin`.
-    #[arg(long, default_value = "fixtures/local/footers.jsonl")]
+    #[arg(long, global = true, default_value = "fixtures/local/footers.jsonl")]
     footers: PathBuf,
     /// Where `cluster_info.json` and `validator_set_<epoch>.json` live (from `fetch`).
-    #[arg(long, default_value = "fixtures/local")]
+    #[arg(long, global = true, default_value = "fixtures/local")]
     sets: PathBuf,
     /// Epoch length. `solana-test-validator` uses 432,000 with no warmup.
-    #[arg(long, default_value_t = 432_000)]
+    #[arg(long, global = true, default_value_t = 432_000)]
     slots_per_epoch: u64,
     /// Output directory.
-    #[arg(long, default_value = "fixtures/local")]
+    #[arg(long, global = true, default_value = "fixtures/local")]
     out: PathBuf,
-    /// Instead of a fixture, make the validator set in `--sets` agree with this slot's
-    /// certificate (drops validators that registered a BLS key after the epoch began), and
-    /// rewrite the set file if it had to change.
-    #[arg(long)]
-    fix_set: bool,
-    /// With `--fix-set`: the blocks whose footer certificates must all verify (comma
-    /// separated). Default: every block the source holds.
-    #[arg(long, value_delimiter = ',')]
-    fix_slots: Vec<u64>,
+    #[command(subcommand)]
+    cmd: Option<Cmd>,
 }
 
-fn main() -> Result<()> {
+#[derive(Subcommand)]
+enum Cmd {
+    /// Verify the validator set in `--sets` against the footer certificates of `--check-slots`
+    /// (default: every block the source holds). Writes a pass/fail JSON report and exits
+    /// non-zero on a fail. It never changes the set.
+    CheckSet {
+        /// Blocks whose footer certificates must verify (comma separated).
+        #[arg(long, value_delimiter = ',')]
+        check_slots: Vec<u64>,
+        /// At least this many distinct certificates must verify.
+        #[arg(long, default_value_t = 3)]
+        min_certs: usize,
+        /// Report path. Default: `<sets>/check_set_<epoch>.json`.
+        #[arg(long)]
+        report: Option<PathBuf>,
+    },
+}
+
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("error: {}", redact::redact_text(&format!("{e:#}")));
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     let cli = Cli::parse();
     let src: Box<dyn ShredSource> = match &cli.shreds {
         Some(dir) => Box::new(ShredFiles::new(dir)),
@@ -87,15 +105,29 @@ fn main() -> Result<()> {
         dir: cli.sets.clone(),
         slots_per_epoch: cli.slots_per_epoch,
     };
-    if cli.fix_set {
-        let slots: Vec<u64> = if cli.fix_slots.is_empty() {
+    if let Some(Cmd::CheckSet { check_slots, min_certs, report }) = &cli.cmd {
+        let slots: Vec<u64> = if check_slots.is_empty() {
             let (a, b) = src.range()?;
             (a..=b).collect()
         } else {
-            cli.fix_slots.clone()
+            check_slots.clone()
         };
-        for line in reconcile_set(src.as_ref(), &slots, &sets)? {
-            println!("{line}");
+        let rep = check_set(src.as_ref(), &slots, &sets, *min_certs)?;
+        let path = report.clone().unwrap_or_else(|| {
+            sets.dir.join(format!("check_set_{}.json", rep["epoch"]))
+        });
+        fs::write(&path, serde_json::to_string_pretty(&rep)? + "\n")?;
+        println!(
+            "{} set for epoch {} ({} validators): {} certificate(s) verified, {} failed -> {}",
+            if rep["pass"] == true { "PASS" } else { "FAIL" },
+            rep["epoch"],
+            rep["validators"],
+            rep["certificates"]["verified"],
+            rep["certificates"]["failed"],
+            path.display()
+        );
+        if rep["pass"] != true {
+            bail!("the validator set does not verify the certificates (the set file was not changed)");
         }
         return Ok(());
     }

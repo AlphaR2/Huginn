@@ -6,7 +6,7 @@ target/
 fixtures/local/footers.jsonl
 zk/program/target/
 zk/prover/target/
-zk/program/Cargo.lock
+# zk/program/Cargo.lock is committed on purpose: the program key depends on exact dependency versions.
 fixtures/proofs/*.bin
 
 # Personal working notes (study plan, build checklist, journal). Never published.

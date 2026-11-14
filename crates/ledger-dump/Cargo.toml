@@ -13,6 +13,7 @@ anyhow.workspace = true
 clap = { version = "4", features = ["derive"] }
 hex.workspace = true
 serde_json.workspace = true
+redact = { path = "../redact" }
 # Same RocksDB as Agave v4.4.0 (librocksdb-sys 0.17.3+10.4.2) and the same compression
 # features, so we can read what the validator wrote. `bindgen-runtime` loads libclang at
 # build time via its own search (incl. xcode-select), so macOS needs no LIBCLANG_PATH.

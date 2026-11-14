@@ -14,7 +14,7 @@ use {
 #[command(about = "Fetch Solana shreds with Agave's repair protocol (no node, no paid feed)")]
 struct Cli {
     /// JSON-RPC URL, used to find a peer's repair address and identity (`getClusterNodes`)
-    #[arg(long, default_value = "http://127.0.0.1:8899", global = true)]
+    #[arg(long, env = "SOLANA_RPC", hide_env_values = true, default_value = "http://127.0.0.1:8899", global = true)]
     rpc: String,
     /// A peer's `serveRepair` address. With --peer-id, skips the RPC lookup.
     #[arg(long, global = true)]
@@ -69,7 +69,10 @@ struct Peer {
 
 fn peers(rpc: &str) -> Result<Vec<Peer>> {
     let body = serde_json::json!({"jsonrpc":"2.0","id":1,"method":"getClusterNodes"});
-    let v: serde_json::Value = ureq::post(rpc).send_json(body)?.into_json()?;
+    let v: serde_json::Value = ureq::post(rpc)
+        .send_json(body)
+        .map_err(|e| anyhow::anyhow!("RPC request to {} failed: {}", redact::Host(rpc), redact::redact_text(&e.to_string())))?
+        .into_json()?;
     let mut out = Vec::new();
     for n in v["result"].as_array().context("getClusterNodes result")? {
         let (Some(addr), Some(id)) = (n["serveRepair"].as_str(), n["pubkey"].as_str()) else {
@@ -115,7 +118,10 @@ fn candidates(cli: &Cli) -> Result<Vec<Peer>> {
 /// Slots with a block, from `from` to `to`, per the cluster's RPC.
 fn produced(rpc: &str, from: u64, to: u64) -> Result<Vec<u64>> {
     let body = serde_json::json!({"jsonrpc":"2.0","id":1,"method":"getBlocks","params":[from, to, {"commitment":"confirmed"}]});
-    let v: serde_json::Value = ureq::post(rpc).send_json(body)?.into_json()?;
+    let v: serde_json::Value = ureq::post(rpc)
+        .send_json(body)
+        .map_err(|e| anyhow::anyhow!("RPC request to {} failed: {}", redact::Host(rpc), redact::redact_text(&e.to_string())))?
+        .into_json()?;
     Ok(v["result"]
         .as_array()
         .map(|a| a.iter().filter_map(|x| x.as_u64()).collect())
@@ -167,7 +173,14 @@ fn fetch_slot_patiently(c: &mut Client, slot: u64) -> Result<Vec<Vec<u8>>> {
     Err(last.unwrap())
 }
 
-fn main() -> Result<()> {
+fn main() {
+    if let Err(e) = run() {
+        eprintln!("error: {}", redact::redact_text(&format!("{e:#}")));
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
     let cli = Cli::parse();
     match &cli.cmd {
         Cmd::Peers => {
@@ -181,7 +194,7 @@ fn main() -> Result<()> {
                     .into_iter()
                     .take(*count as usize)
                     .collect();
-                ensure!(!slots.is_empty(), "no blocks from {from} on {}", cli.rpc);
+                ensure!(!slots.is_empty(), "no blocks from {from} on {}", redact::Host(&cli.rpc));
                 for s in slots {
                     let shreds = fetch_slot_patiently(c, s)?;
                     let cert = match footer_cert_slot(&shreds) {
@@ -243,7 +256,7 @@ fn main() -> Result<()> {
                         ensure!(
                             waited < 30,
                             "no later block appeared on {} within a minute",
-                            cli.rpc
+                            redact::Host(&cli.rpc)
                         );
                         std::thread::sleep(std::time::Duration::from_secs(2));
                         continue;

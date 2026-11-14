@@ -11,7 +11,8 @@
 //! ```
 //!
 //! Where proving happens follows SP1's own environment: `SP1_PROVER=cpu` (default) or
-//! `mock`. The prover network needs sp1-sdk's `network` feature (not enabled yet).
+//! `mock`, or `network` when this crate is built with `--features network` (the account key
+//! comes from `NETWORK_PRIVATE_KEY` in the environment only, never an argument).
 
 use {
     alpenglow_core::{

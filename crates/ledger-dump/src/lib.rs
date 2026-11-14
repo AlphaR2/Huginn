@@ -393,7 +393,10 @@ pub fn build_fixture(
     let epoch = slot / sets.slots_per_epoch;
     let set_path = sets.dir.join(format!("validator_set_{epoch}.json"));
     let set_json = read_json(&set_path).with_context(|| {
-        format!("no set for epoch {epoch}: run `fetch validator-set --cluster local` during it")
+        format!(
+            "no set for epoch {epoch}: run `fetch validator-set --cluster {}` during it",
+            cluster["cluster"].as_str().unwrap_or("<cluster>")
+        )
     })?;
     let set: ValidatorSet = serde_json::from_value(set_json["validator_set"].clone())?;
     if set.epoch != epoch {
@@ -484,8 +487,10 @@ pub fn build_fixture(
     }
 
     let fixture = json!({
-        "cluster": "local",
+        "cluster": cluster["cluster"],
         "slot": slot,
+        // The bank hash this block's own footer claims (None if the footer is not there).
+        "footer_bank_hash": footer_bank_hash(&data)?.map(hex::encode),
         "parent_slot": parent_slot_used,
         "epoch": epoch,
         "shred_version": shred_version,
@@ -510,186 +515,87 @@ pub fn read_json(path: &Path) -> Result<Value> {
     )?)
 }
 
-/// Most validators we will try dropping from a fetched set to match a certificate.
-const MAX_DROPPED: usize = 4;
-
-/// Every way to leave out `k` of `n` ranks, in order.
-fn omissions(n: usize, k: usize) -> Vec<Vec<usize>> {
-    fn go(start: usize, n: usize, k: usize, cur: &mut Vec<usize>, out: &mut Vec<Vec<usize>>) {
-        if cur.len() == k {
-            out.push(cur.clone());
-            return;
-        }
-        for i in start..n {
-            cur.push(i);
-            go(i + 1, n, k, cur, out);
-            cur.pop();
+/// The footer's own `bank_hash` (the bank hash of the block the footer belongs to).
+/// `None` if the block has no footer yet.
+pub fn footer_bank_hash(data: &[Vec<u8>]) -> Result<Option<[u8; 32]>> {
+    let shreds = data
+        .iter()
+        .map(|b| Shred::parse(b))
+        .collect::<Result<Vec<_>, _>>()?;
+    let Ok(components) = block::deshred(&shreds) else {
+        return Ok(None);
+    };
+    for c in &components {
+        if let Component::Marker(Marker::Footer(bytes)) = block::parse_component(c)? {
+            return Ok(Some(block::parse_footer(bytes)?.bank_hash));
         }
     }
-    let mut out = Vec::new();
-    go(0, n, k, &mut Vec::new(), &mut out);
-    out
+    Ok(None)
 }
 
-/// Makes the saved validator set agree with real certificates.
+/// Checks a saved validator set against real certificates. **Never changes the set.**
 ///
-/// The set for epoch N is a snapshot from the start of epoch N-1, but `fetch validator-set`
-/// reads the vote accounts as they are now. Validators with new stake, too little balance or
-/// a BLS key registered since are in our list and not in the signers' list, which shifts
-/// every rank below them and makes the signature fail. The signer bitmap says how many
-/// validators the signers had, so we leave out exactly that many of ours.
+/// The set for epoch N is a snapshot, but RPC only shows live data, so a fetched set can be
+/// wrong. The only honest test is whether it verifies real certificates: a wrong set cannot.
+/// (An earlier version tried to repair the set by dropping validators until certificates
+/// passed; that fitting could accept a wrong set and is gone.)
 ///
-/// The certificates are the ones in the footers of the blocks in `slots` (each footer
-/// certifies a recent block; its own shreds are not needed). One certificate can leave
-/// several choices open, since validators that did not sign it are not tested by it, so every
-/// one of them must verify and we keep the choices they all accept. Nothing is guessed: a
-/// wrong set cannot verify, and if no choice survives we stop and say so.
-///
-/// Returns what it did, one line each. The set file is rewritten only when it was changed.
-pub fn reconcile_set(src: &dyn ShredSource, slots: &[u64], sets: &Sets) -> Result<Vec<String>> {
-    let shred_version = read_json(&sets.dir.join("cluster_info.json"))?["shred_version"]
-        .as_u64()
-        .context("shred_version")? as u16;
+/// Each of `slots` is a block whose footer certifies an earlier block; every distinct
+/// certificate that belongs to the set's epoch is verified. Returns a JSON report with
+/// `"pass"`; the caller writes it and exits non-zero on a fail. Passing needs at least
+/// `min_certs` certificates, all verifying.
+pub fn check_set(src: &dyn ShredSource, slots: &[u64], sets: &Sets, min_certs: usize) -> Result<Value> {
+    let cluster = read_json(&sets.dir.join("cluster_info.json"))?;
+    let shred_version = cluster["shred_version"].as_u64().context("shred_version")? as u16;
     let first = *slots.first().context("no slots to check against")?;
     let epoch = first / sets.slots_per_epoch;
     let path = sets.dir.join(format!("validator_set_{epoch}.json"));
-    let mut file = read_json(&path)?;
+    let file = read_json(&path)?;
     let set: ValidatorSet = serde_json::from_value(file["validator_set"].clone())?;
-    let n = set.entries.len();
 
-    // One certificate per certified slot, from whichever block's footer carries it.
-    let mut certified: Vec<(u64, FooterCert)> = Vec::new();
+    let mut checks: Vec<Value> = Vec::new();
+    let mut seen: Vec<u64> = Vec::new();
+    let (mut passed, mut failed, mut skipped) = (0usize, 0usize, 0usize);
     for &slot in slots {
-        let Ok(data) = src.data_shreds(slot) else {
-            continue;
-        };
-        let Ok(Some(raw)) = footer_cert(&data) else {
-            continue;
-        };
+        let Ok(data) = src.data_shreds(slot) else { continue };
+        let Ok(Some(raw)) = footer_cert(&data) else { continue };
         let cert: FooterCert = serde_json::from_value(raw)?;
-        if cert.slot / sets.slots_per_epoch == epoch
-            && !certified.iter().any(|(s, _)| *s == cert.slot)
-        {
-            certified.push((cert.slot, cert));
+        if seen.contains(&cert.slot) {
+            continue;
         }
-    }
-    if certified.is_empty() {
-        bail!(
-            "none of the {} blocks has a certificate in its footer",
-            slots.len()
-        );
-    }
-
-    let without = |drop: &[usize]| {
-        let entries: Vec<_> = set
-            .entries
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| !drop.contains(i))
-            .map(|(_, e)| e.clone())
-            .collect();
-        let total_stake = entries.iter().fold(0u64, |t, e| t.saturating_add(e.stake));
-        ValidatorSet {
-            epoch: set.epoch,
-            total_stake,
-            entries,
+        seen.push(cert.slot);
+        if cert.slot / sets.slots_per_epoch != epoch {
+            skipped += 1;
+            checks.push(json!({"certified_slot": cert.slot, "found_in_block": slot, "result": "skipped", "why": "certificate is from another epoch"}));
+            continue;
         }
-    };
-
-    if certified
-        .iter()
-        .all(|(_, c)| verify_footer(c, shred_version, &set).is_ok())
-    {
-        return Ok(vec![format!(
-            "set for epoch {epoch} ({n} validators) matches the certificates of {} blocks",
-            certified.len()
-        )]);
+        let result = verify_footer(&cert, shred_version, &set);
+        let (res, err) = match &result {
+            Ok(_) => ("pass", None),
+            Err(e) => ("fail", Some(e.to_string())),
+        };
+        if result.is_ok() { passed += 1 } else { failed += 1 }
+        checks.push(json!({"certified_slot": cert.slot, "found_in_block": slot, "result": res, "error": err,
+            "has_notar_aggregate": cert.notar_aggregate.is_some()}));
     }
-
-    // A bitmap's bit count only reaches the last signer, so it is a floor on the real set's
-    // size, not its size. Try leaving out one validator, then two, and so on; the fewest that
-    // make every certificate verify is the safest set (it keeps every validator that could
-    // still sign).
-    let floor = certified
-        .iter()
-        .filter_map(|(_, c)| {
-            let bm = &c.final_aggregate.bitmap;
-            (bm.first() == Some(&0)).then(|| {
-                bm.get(1..3)
-                    .map(|b| u16::from_le_bytes([b[0], b[1]]) as usize)
-            })?
-        })
-        .max()
-        .unwrap_or(0);
-    let mut survivors: Vec<Vec<usize>> = Vec::new();
-    for k in 1..=MAX_DROPPED.min(n.saturating_sub(floor)) {
-        survivors = omissions(n, k)
-            .into_iter()
-            .filter(|d| {
-                let cand = without(d);
-                certified
-                    .iter()
-                    .all(|(_, c)| verify_footer(c, shred_version, &cand).is_ok())
-            })
-            .collect();
-        if !survivors.is_empty() {
-            break;
-        }
-    }
-    let blocks = certified.len();
-    if survivors.is_empty() {
-        bail!("no way of leaving out a few validators makes all {blocks} certificates verify: the set is wrong in some other way");
-    }
-    // Several choices left means the validators they differ on never signed in these blocks,
-    // so no certificate here can tell them apart and every choice verifies exactly the same
-    // blocks. Take the first and say so; a later block where one of them signs would show it.
-    let equal = survivors.len();
-    let drop = survivors.remove(0);
-    let fixed = without(&drop);
-
-    let mut report = vec![format!(
-        "set for epoch {epoch} had {n} validators; leaving out {} of them makes {blocks} certificates verify. Left out ranks {drop:?}, which the epoch's snapshot did not have (new stake, low balance or no BLS key then); the rest verifies",
-        drop.len()
-    )];
-    if equal > 1 {
-        report.push(format!(
-            "  note: {equal} choices verify these {blocks} blocks equally (they differ on validators that did not sign in them); took the first. If a block they did sign in fails to verify, rerun"
-        ));
-    }
-    for &i in &drop {
-        report.push(format!(
-            "  left out rank {i}: vote account {} stake {}",
-            hex::encode(set.entries[i].vote_pubkey),
-            set.entries[i].stake
-        ));
-    }
-    file["validator_set"] = serde_json::to_value(&fixed)?;
-    file["commitment"] = json!(hex::encode(fixed.commitment()));
-    file["stats"]["ranked"] = json!(fixed.entries.len());
-    file["reconciled"] = json!({
-        "checked_slots": certified.iter().map(|(s, _)| *s).collect::<Vec<_>>(),
-        "left_out_ranks": drop,
-        "equally_valid_choices": equal,
-        "why": "not in the epoch's stake snapshot (taken at the start of the previous epoch): no stake yet, too little balance, or no BLS key then",
-    });
-    fs::write(&path, serde_json::to_string_pretty(&file)? + "\n")?;
-    report.push(format!(
-        "  new commitment {} -> {}",
-        hex::encode(fixed.commitment()),
-        path.display()
-    ));
-    Ok(report)
-}
-
-#[cfg(test)]
-mod reconcile_tests {
-    use super::omissions;
-
-    #[test]
-    fn omissions_lists_every_choice_once() {
-        assert_eq!(omissions(4, 2).len(), 6);
-        assert_eq!(omissions(23, 3).len(), 1771);
-        assert_eq!(omissions(3, 0), vec![Vec::<usize>::new()]);
-        assert_eq!(omissions(3, 1), vec![vec![0], vec![1], vec![2]]);
-    }
+    let pass = failed == 0 && passed >= min_certs && set.epoch == epoch;
+    Ok(json!({
+        "pass": pass,
+        "cluster": cluster["cluster"],
+        "epoch": epoch,
+        "set_file_epoch": set.epoch,
+        "validators": set.entries.len(),
+        "total_stake": set.total_stake,
+        "commitment": hex::encode(set.commitment()),
+        "stake_label": file["stake_label"],
+        "shred_version": shred_version,
+        "certificates": {"verified": passed, "failed": failed, "skipped_other_epoch": skipped, "required_at_least": min_certs},
+        "checks": checks,
+        "set_was_modified": false,
+        // A pass means: this set verifies these certificates. It does NOT prove the stakes equal
+        // Solana's frozen epoch stakes: certificates only test the 60%/80% thresholds, so
+        // slightly wrong stakes (e.g. RPC's live numbers) can still pass.
+        "stakes_exact": false,
+        "meaning": "consistent with the checked certificates; stake values not proven exact",
+    }))
 }

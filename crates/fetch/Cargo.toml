@@ -9,8 +9,9 @@ serde.workspace = true
 serde_json.workspace = true
 hex.workspace = true
 anyhow.workspace = true
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", features = ["derive", "env"] }
 ureq = { version = "2", features = ["json"] }
 alpenglow-lc = { path = "../alpenglow-lc" }
 base64 = "0.22"
 bs58 = "0.5"
+redact = { path = "../redact" }

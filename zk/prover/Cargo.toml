@@ -27,6 +27,12 @@ bs58 = "0.5"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 
+[features]
+# Prove on Succinct's prover network (`SP1_PROVER=network`). Off by default: it pulls in a
+# large dependency tree. The account key is read ONLY from the `NETWORK_PRIVATE_KEY`
+# environment variable (by sp1-sdk); this crate never takes it as an argument or prints it.
+network = ["sp1-sdk/network"]
+
 [build-dependencies]
 sp1-build = "=6.10.0"
 

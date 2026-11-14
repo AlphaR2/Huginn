@@ -116,7 +116,6 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 name = "alpenglow-core"
 version = "0.1.0"
 dependencies = [
- "alpenglow-core",
  "bls12_381",
  "hex",
  "serde",
@@ -760,6 +759,7 @@ dependencies = [
  "bs58",
  "clap",
  "hex",
+ "redact",
  "serde",
  "serde_json",
  "ureq",
@@ -929,6 +929,14 @@ dependencies = [
  "rand_core 0.6.4",
  "rand_xorshift",
  "subtle",
+]
+
+[[package]]
+name = "handover"
+version = "0.1.0"
+dependencies = [
+ "alpenglow-core",
+ "thiserror",
 ]
 
 [[package]]
@@ -1180,6 +1188,7 @@ dependencies = [
  "anyhow",
  "clap",
  "hex",
+ "redact",
  "rocksdb",
  "serde_json",
 ]
@@ -1747,6 +1756,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "redact"
+version = "0.1.0"
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1994,6 +2007,7 @@ dependencies = [
  "bs58",
  "clap",
  "hex",
+ "redact",
  "serde_json",
  "sha2 0.10.9",
  "solana-keypair",

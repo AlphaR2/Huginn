@@ -11,6 +11,9 @@ use {
 
 pub const BLS_PUBKEY_LEN: usize = 48;
 
+/// Agave keeps at most this many validators (the top by stake) in an epoch's set.
+pub const MAX_VALIDATORS: usize = 2000;
+
 /// One vote account as read from the chain, before any filtering.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Candidate {
@@ -63,7 +66,16 @@ impl ValidatorSet {
         alpenglow_core::proof::validator_set_hash(&self.to_proof_validators())
     }
 
-    /// Builds the ranked list exactly as Agave does:
+    /// Builds the ranked list exactly as Agave does, from candidates that have **already
+    /// passed Agave's VAT filter** upstream (the filter keeps vote accounts that hold a BLS
+    /// key and stake, can pay rent + the validator admission fee, and are in the top
+    /// 2000). We do not re-apply that filter here: pass in the epoch's members only
+    /// (`getVoteAccounts` entries with `epochVoteAccount == true`). Handing in the whole
+    /// vote-account list gives a wrong set; the 2000 limit below is a tripwire for that.
+    ///
+    /// Panics if more than [`MAX_VALIDATORS`] entries remain.
+    ///
+    /// Rules, mirroring `BLSPubkeyToRankMap::new`:
     /// 1. skip zero stake, missing or invalid BLS key;
     /// 2. drop every entry whose BLS key or node pubkey appears more than once;
     /// 3. sort by stake descending, then BLS key bytes ascending.
@@ -98,6 +110,11 @@ impl ValidatorSet {
             .collect();
         entries.sort_by(|a, b| b.stake.cmp(&a.stake).then(a.bls_pubkey.cmp(&b.bls_pubkey)));
 
+        assert!(
+            entries.len() <= MAX_VALIDATORS,
+            "{} ranked validators exceeds Agave's {MAX_VALIDATORS}: the input was not VAT-filtered",
+            entries.len()
+        );
         let total_stake = entries.iter().fold(0u64, |t, e| t.saturating_add(e.stake));
         Self {
             epoch,
@@ -197,5 +214,41 @@ mod tests {
         );
         let order: Vec<_> = set.entries.iter().map(|e| e.bls_pubkey).collect();
         assert_eq!(order, vec![key(3), lo, hi]);
+    }
+
+    #[test]
+    #[should_panic(expected = "not VAT-filtered")]
+    fn more_than_2000_entries_is_refused() {
+        let cands = (0..=MAX_VALIDATORS as u32).map(|i| {
+            let mut seed = [7u8; 32];
+            seed[..4].copy_from_slice(&i.to_le_bytes());
+            let kp = Keypair::derive(&seed).unwrap();
+            let mut vote = [0u8; 32];
+            vote[..4].copy_from_slice(&i.to_le_bytes());
+            let mut node = [1u8; 32];
+            node[..4].copy_from_slice(&i.to_le_bytes());
+            Candidate {
+                vote_pubkey: vote,
+                node_pubkey: node,
+                stake: 1 + i as u64,
+                bls_pubkey: Some(PubkeyCompressed::from(&*kp.public).0),
+            }
+        });
+        let _ = ValidatorSet::from_candidates(1, cands);
+    }
+
+    #[test]
+    fn exactly_2000_entries_is_accepted() {
+        let cands = (0..MAX_VALIDATORS as u32).map(|i| {
+            let mut seed = [9u8; 32];
+            seed[..4].copy_from_slice(&i.to_le_bytes());
+            let kp = Keypair::derive(&seed).unwrap();
+            let mut vote = [0u8; 32];
+            vote[..4].copy_from_slice(&i.to_le_bytes());
+            let mut node = [1u8; 32];
+            node[..4].copy_from_slice(&i.to_le_bytes());
+            Candidate { vote_pubkey: vote, node_pubkey: node, stake: 1 + i as u64, bls_pubkey: Some(PubkeyCompressed::from(&*kp.public).0) }
+        });
+        assert_eq!(ValidatorSet::from_candidates(1, cands).entries.len(), MAX_VALIDATORS);
     }
 }

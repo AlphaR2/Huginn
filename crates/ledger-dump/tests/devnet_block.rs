@@ -36,6 +36,9 @@ fn real_devnet_block_rebuilds_its_certified_block_id() {
     .expect("devnet block checks out");
     assert_eq!(built.fixture["block_final_cert"]["block_id"], BLOCK_ID);
     assert_eq!(built.fixture["shred_version"], 7016);
+    let bh = built.fixture["footer_bank_hash"].as_str().expect("footer bank hash recorded");
+    assert_eq!(bh.len(), 64);
+    assert_eq!(built.fixture["cluster"], "devnet");
     assert_eq!(built.fixture["epoch"], 1202);
     assert_eq!(built.fixture["data_shreds"].as_array().unwrap().len(), 192);
     // No parent certificate was available, so none is stored, but the id is.

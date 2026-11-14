@@ -1,0 +1,11 @@
+[package]
+name = "handover"
+description = "Where the next epoch's validator set comes from, with its evidence: one interface, two sources (the recorder program today, SIMD-0676 on-chain epoch stakes later)."
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+publish = false
+
+[dependencies]
+alpenglow-core = { path = "../alpenglow-core" }
+thiserror.workspace = true
