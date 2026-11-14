@@ -26,6 +26,10 @@ hex = "0.4"
 bs58 = "0.5"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
+# Independent check of the exact bytes sent on-chain: the same Groth16 verification the
+# Solidity verifier does, in plain Rust, against SP1 v6.10.0's pinned Groth16 key.
+sp1-verifier = "=6.10.0"
+sha2 = "0.10"
 
 [features]
 # Prove on Succinct's prover network (`SP1_PROVER=network`). Off by default: it pulls in a

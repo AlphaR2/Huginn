@@ -21,7 +21,8 @@ use {
     },
     anyhow::{anyhow, bail, ensure, Context, Result},
     sp1_sdk::{
-        env::EnvProver, include_elf, prelude::*, Elf, HashableKey, ProverClient, SP1ProofWithPublicValues, SP1Stdin,
+        env::{EnvProver, EnvProvingKey},
+        include_elf, prelude::*, Elf, HashableKey, ProverClient, SP1ProofWithPublicValues, SP1Stdin,
     },
     std::{path::Path, str::FromStr, time::Instant},
 };
@@ -135,25 +136,37 @@ impl Huginn {
         let vkey = pk.verifying_key().clone();
 
         let t = Instant::now();
-        let request = self.client.prove(&pk, stdin(input));
-        let proof = match mode {
-            Mode::Core => request.core().await,
-            Mode::Compressed => request.compressed().await,
-            Mode::Groth16 => request.groth16().await,
-        }
-        .map_err(|e| anyhow!("{e}"))?;
+        let proof = match self.prove_on_network(&pk, input, mode).await {
+            Some(result) => result?,
+            None => {
+                let request = self.client.prove(&pk, stdin(input));
+                match mode {
+                    Mode::Core => request.core().await,
+                    Mode::Compressed => request.compressed().await,
+                    Mode::Groth16 => request.groth16().await,
+                }
+                .map_err(|e| anyhow!("{e}"))?
+            }
+        };
         let prove_secs = t.elapsed().as_secs_f64();
 
         let t = Instant::now();
         self.client.verify(&proof, &vkey, None).map_err(|e| anyhow!("{e}"))?;
-        let verify_secs = t.elapsed().as_secs_f64();
         ensure!(proof.public_values.as_slice() == native.as_slice(), "proof public values differ from native");
+        let program_vkey = vkey.bytes32();
+        let onchain_proof = if mode == Mode::Groth16 { proof.bytes() } else { Vec::new() };
+        // The mock prover makes no real proof (its "Groth16" is a placeholder for the mock
+        // verifier), so there is nothing to check; every real prover's proof is checked.
+        if mode == Mode::Groth16 && !matches!(self.client, EnvProver::Mock(_)) {
+            check_onchain_bytes(&onchain_proof, &native, &program_vkey)?;
+        }
+        let verify_secs = t.elapsed().as_secs_f64();
 
         Ok(Proven {
             mode,
-            program_vkey: vkey.bytes32(),
+            program_vkey,
             public_values: native,
-            onchain_proof: if mode == Mode::Groth16 { proof.bytes() } else { Vec::new() },
+            onchain_proof,
             proof,
             setup_secs,
             prove_secs,
@@ -161,10 +174,93 @@ impl Huginn {
         })
     }
 
+    /// With `SP1_PROVER=network`, sends the request with Huginn's auction settings
+    /// ([`network_settings`]) instead of the SDK's defaults. `None` for every other prover.
+    #[cfg(feature = "network")]
+    async fn prove_on_network(
+        &self,
+        pk: &EnvProvingKey,
+        input: &TxInput,
+        mode: Mode,
+    ) -> Option<Result<SP1ProofWithPublicValues>> {
+        let (EnvProver::Network(prover), EnvProvingKey::Network { pk, .. }) = (&self.client, pk) else {
+            return None;
+        };
+        Some(
+            async {
+                let request = prover
+                    .prove(pk, stdin(input))
+                    .strategy(sp1_sdk::network::FulfillmentStrategy::Auction)
+                    .min_auction_period(network_settings::MIN_AUCTION_PERIOD_SECS)
+                    .auction_timeout(network_settings::AUCTION_TIMEOUT)
+                    .max_price_per_pgu_buffer(network_settings::PRICE_BUFFER_PCT)
+                    .timeout(network_settings::PROOF_TIMEOUT);
+                match mode {
+                    // The network does not accept core proofs.
+                    Mode::Core => bail!("the prover network does not make core proofs; use compressed or groth16"),
+                    Mode::Compressed => request.compressed().await,
+                    Mode::Groth16 => request.groth16().await,
+                }
+                .map_err(|e| anyhow!("{e}"))
+            }
+            .await,
+        )
+    }
+
+    #[cfg(not(feature = "network"))]
+    async fn prove_on_network(
+        &self,
+        _: &EnvProvingKey,
+        _: &TxInput,
+        _: Mode,
+    ) -> Option<Result<SP1ProofWithPublicValues>> {
+        None
+    }
+
     /// The program key, without proving anything.
     pub async fn program_vkey(&self) -> Result<String> {
         Ok(self.client.setup(ELF).await.map_err(|e| anyhow!("{e}"))?.verifying_key().bytes32())
     }
+}
+
+/// Auction settings for Succinct's prover network (a marketplace where provers bid to make
+/// the proof; the lowest bid wins and is paid in PROVE).
+pub mod network_settings {
+    use std::time::Duration;
+
+    /// Wait this long for bids before settling, so every prover gets to bid. The SDK default
+    /// is 1 s; Succinct recommends 10–15 s when latency doesn't matter.
+    pub const MIN_AUCTION_PERIOD_SECS: u64 = 15;
+    /// Cancel the request if no prover bids within this time (SDK default: 30 s).
+    pub const AUCTION_TIMEOUT: Duration = Duration::from_secs(120);
+    /// The most we accept per unit of proving work, as a percentage of the network's current
+    /// market price. 120 is the SDK's default; written here so it is a decision, not a default
+    /// that can change under us.
+    pub const PRICE_BUFFER_PCT: u64 = 120;
+    /// Abort if the winning prover hasn't delivered by then. Groth16 for this program takes
+    /// minutes; 30 minutes leaves room without letting a stuck request hang the run.
+    pub const PROOF_TIMEOUT: Duration = Duration::from_secs(30 * 60);
+}
+
+/// Checks the exact bytes a destination contract will receive, with `sp1-verifier`: the
+/// same Groth16 check the Solidity verifier does, in plain Rust, against SP1 v6.10.0's pinned
+/// Groth16 key. Independent of the SDK's own `verify`, and it also confirms the proof's
+/// 4-byte selector is the one Succinct's gateways route for this SP1 version.
+fn check_onchain_bytes(onchain_proof: &[u8], public_values: &[u8], program_vkey: &str) -> Result<()> {
+    sp1_verifier::Groth16Verifier::verify(
+        onchain_proof,
+        public_values,
+        program_vkey,
+        &sp1_verifier::GROTH16_VK_BYTES,
+    )
+    .map_err(|e| anyhow!("the on-chain proof bytes do not verify off-chain: {e}"))
+}
+
+/// The 4-byte selector at the start of every Groth16 proof from this SP1 version. Succinct's
+/// gateways route by it; on Base Sepolia it routes to an unfrozen verifier (checked 14 Nov 2026).
+pub fn groth16_selector() -> [u8; 4] {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(*sp1_verifier::GROTH16_VK_BYTES)[..4].try_into().expect("4 bytes")
 }
 
 fn stdin(input: &TxInput) -> SP1Stdin {
@@ -194,4 +290,29 @@ pub fn tx_input_from_block_file(block: impl AsRef<Path>, signature: &str) -> Res
     let inclusion = TxInclusion::from_block(&block.data_shreds, block.parent_slot, block.parent_block_id, sig)
         .map_err(|e| anyhow!("transaction {signature} in {}: {e:?}", path.display()))?;
     Ok(TxInput { finality: block.finality, inclusion })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The selector Succinct's Base Sepolia gateway was checked to route (to an unfrozen
+    /// verifier). If an SP1 upgrade changes it, the gateway route must be re-checked.
+    #[test]
+    fn groth16_selector_is_the_routed_one() {
+        assert_eq!(hex::encode(groth16_selector()), "4388a21c");
+    }
+
+    #[test]
+    fn check_onchain_bytes_rejects_bad_proofs() {
+        let vkey = format!("0x{}", "11".repeat(32));
+        // Too short.
+        assert!(check_onchain_bytes(&[0u8; 10], b"out", &vkey).is_err());
+        // Right length, wrong selector.
+        assert!(check_onchain_bytes(&[0u8; 4 + 32 * 8], b"out", &vkey).is_err());
+        // Right selector, garbage proof.
+        let mut fake = groth16_selector().to_vec();
+        fake.extend([7u8; 32 * 8]);
+        assert!(check_onchain_bytes(&fake, b"out", &vkey).is_err());
+    }
 }
