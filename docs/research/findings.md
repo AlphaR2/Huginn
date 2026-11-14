@@ -402,3 +402,9 @@ Sources: Agave v4.4.0 `entry/src/block_component.rs`, `runtime/src/block_compone
 
 - The validator set posted to each destination chain is trusted input. We post it ourselves.
 - We don't re-check BLS proof of possession. We rely on the vote program's check at registration. A later improvement: re-check once per epoch when posting the set.
+
+### The program key differed between a Mac and a Linux server (2026-11-14)
+- Same commit, same SP1 toolchain build (`d83ed91`), same lock files: the Mac (arm64) and the server (x86_64) produced ELFs of identical size and layout, but about 2,000 bytes of code and 357 bytes of constants differed. The same code was laid out in a different order.
+- Cause: cargo includes `rustc -vV` (which names the host) in every crate's metadata hash, and those hashes drive symbol names and code layout. Stripping symbols removes the names but not the order they produced.
+- Fix: build the program in SP1's pinned Docker image by default (`zk/prover/build.rs`). Key from the Docker build on the Mac: `0x006a5709f825d075af9540231ccd6add1464431b74d4deef30d5c3bc76454c19` (ELF sha256 `1dc0909463b417a3…`).
+

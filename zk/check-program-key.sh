@@ -6,11 +6,12 @@
 #
 #   zk/check-program-key.sh
 #
-# Needs the SP1 toolchain (sp1up --version v6.10.0). Takes a few minutes: the copy builds in
-# its own target folder.
+# Builds in SP1's pinned Docker image (see zk/prover/build.rs), so Docker must be running.
+# The same ELF hash must come out on every machine: compare the printed hash across machines.
+# Takes a while: the copy builds the prover in its own target folder.
 set -euo pipefail
 here="$(cd "$(dirname "$0")/.." && pwd)"
-elf=zk/program/target/elf-compilation/riscv64im-succinct-zkvm-elf/release/huginn-program
+elf=zk/program/target/elf-compilation/docker/riscv64im-succinct-zkvm-elf/release/huginn-program
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 copy="$work/some/other/place/huginn"
@@ -21,12 +22,12 @@ echo "1/3 building the program here ($here)"
 
 echo "2/3 building it again from a copy at $copy"
 rsync -a --exclude target --exclude .git "$here/crates" "$here/zk" "$here/Cargo.toml" "$here/Cargo.lock" "$copy/"
-(cd "$copy/zk/prover" && CARGO_TARGET_DIR="$work/target" cargo build --release --quiet)
+# No CARGO_TARGET_DIR: the Docker build needs the target folder inside the checkout it mounts.
+(cd "$copy/zk/prover" && cargo build --release --quiet)
 
 echo "3/3 comparing"
 a="$(shasum -a 256 "$here/$elf" | cut -d' ' -f1)"
-# sp1-build writes the program into the cargo target folder, which is CARGO_TARGET_DIR for the copy.
-b="$(shasum -a 256 "$work/target/${elf#zk/program/target/}" | cut -d' ' -f1)"
+b="$(shasum -a 256 "$copy/$elf" | cut -d' ' -f1)"
 echo "  here : $a"
 echo "  copy : $b"
 if grep -q "$HOME" "$here/$elf"; then

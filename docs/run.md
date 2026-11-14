@@ -22,7 +22,7 @@ Install each once. The versions are the ones Huginn is tested with.
 | protoc | SP1 builds | `brew install protobuf` (Ubuntu: `apt install protobuf-compiler`) |
 | Solana CLI, Agave 4.4.0 | the local Alpenglow validator, sending the memo | `sh -c "$(curl -sSfL https://release.anza.xyz/v4.4.0/install)"` |
 | Foundry | contracts, anvil | `curl -L https://foundry.paradigm.xyz \| bash`, then `foundryup` |
-| Docker | Groth16 only, and only with ≥32 GB RAM (part 2) | Docker Desktop |
+| Docker | building the SP1 program (always: it is built in SP1's pinned image so the program key is the same on every machine; `HUGINN_NATIVE_PROGRAM=1` skips Docker for quick local work, but that key must never be deployed), and local Groth16 with ≥32 GB RAM (part 2) | Docker Desktop (Ubuntu: `apt install docker.io`, then add your user to the `docker` group) |
 
 Open a new terminal afterwards, so the new `PATH` entries apply.
 
