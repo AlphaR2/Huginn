@@ -1,6 +1,13 @@
 target/
 **/target/
+# Secrets: every env file except the committed template, keys and keypairs.
 .env
+.env.*
+!.env.example
+*.pem
+*.key
+id.json
+*keypair*.json
 .local-ledger/
 # Raw footer stream from the footer-dump plugin. Grows forever; commit samples only.
 fixtures/local/footers.jsonl
